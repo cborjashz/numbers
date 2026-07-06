@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Lotería - PDV</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1e1e2e; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: #2d2d44; padding: 30px; border-radius: 15px; width: 90%; max-width: 600px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        h1 { text-align: center; margin-bottom: 20px; }
+        .login-box, .game-box { display: none; }
+        .login-box.active, .game-box.active { display: block; }
+        input, select { width: 100%; padding: 12px; margin: 8px 0; border: none; border-radius: 8px; background: #3b3b5c; color: white; font-size: 16px; box-sizing: border-box; }
+        button { width: 100%; padding: 15px; margin-top: 15px; border: none; border-radius: 8px; background: #00a86b; color: white; font-size: 18px; font-weight: bold; cursor: pointer; }
+        button:hover { background: #008f5a; }
+        .grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; margin: 20px 0; }
+        .num-btn { padding: 10px 0; background: #3b3b5c; border: none; border-radius: 5px; color: white; font-size: 14px; cursor: pointer; }
+        .num-btn.selected { background: #00a86b; color: black; font-weight: bold; }
+        .num-btn:hover { background: #4a4a6e; }
+        .opciones-rapidas { display: flex; flex-wrap: wrap; gap: 10px; margin: 15px 0; }
+        .opcion-btn { flex: 1; min-width: 60px; padding: 10px; background: #ffaa00; color: black; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        .opcion-btn:hover { background: #e69900; }
+        .form-row { display: flex; gap: 10px; }
+        .form-row input { flex: 1; }
+        .message { margin-top: 15px; text-align: center; font-weight: bold; }
+        .success { color: #00a86b; }
+        .error { color: #ff5555; }
+        .logout { background: #555; margin-top: 10px; }
+        .logout:hover { background: #777; }
+        /* === CORRECCIÓN DE VISIBILIDAD PARA OPCIONES RÁPIDAS === */
+        #opcionesContainer {
+            min-height: 40px;           /* Siempre tendrá al menos 40px de alto */
+            border: 1px dashed #ffaa00; /* Un borde amarillo para verlo aunque esté vacío */
+            padding: 5px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎱 LOTERÍA</h1>
+
+        <!-- LOGIN -->
+        <div id="loginBox" class="login-box active">
+            <h2>Iniciar Sesión</h2>
+            <input type="text" id="loginUser" placeholder="Usuario">
+            <input type="password" id="loginPass" placeholder="Contraseña">
+            <button onclick="login()">Acceder</button>
+            <div id="loginMsg" class="message error"></div>
+        </div>
+
+        <!-- JUEGO -->
+        <div id="gameBox" class="game-box">
+            <div style="display:flex; justify-content:space-between;">
+                <span id="userDisplay" style="font-weight:bold;"></span>
+                <button class="logout" onclick="logout()" style="width:auto; padding:5px 15px;">Salir</button>
+            </div>
+
+            <!-- Cargar recibo de referencia -->
+            <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
+                <input type="number" id="reciboReferencia" placeholder="Recibo de referencia" style="flex: 1;">
+                <button onclick="cargarRecibo()" style="width: auto; padding: 10px 20px; background: #ffaa00; color: black;">📂 Cargar Recibo</button>
+            </div>
+
+            <!-- Opciones rápidas (cargadas desde la BD) -->
+            <div class="opciones-rapidas" id="opcionesContainer"></div>
+
+            <!-- Botón para limpiar selección -->
+            <div style="display: flex; justify-content: center; margin: 5px 0 15px 0;">
+                <button onclick="limpiarSeleccion()" style="width: auto; padding: 8px 25px; background: #d32f2f; color: white; font-size: 14px; border-radius: 8px;">🗑️ Limpiar Selección</button>
+            </div>
+
+            <!-- Tablero de números -->
+            <div class="grid" id="numberGrid"></div>
+
+            <!-- Formulario de venta -->
+            <div class="form-row">
+                <input type="text" id="clienteInput" placeholder="Cliente">
+                <input type="number" id="precioInput" placeholder="Precio L." step="0.01">
+            </div>
+            <button onclick="vender()">🟢 VENDER</button>
+            <div id="resultMsg" class="message"></div>
+        </div>
+    </div>
+
+    <script>
+        // Variables de estado
+        let currentUser = null;
+        let selectedNumbers = [];
+
+        // URL de la API
+        const API = '/api';
+
+        // Login
+        async function login() {
+            const user = document.getElementById('loginUser').value;
+            const pass = document.getElementById('loginPass').value;
+            const res = await fetch(API + '/login', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({usuario: user, password: pass})
+            });
+            const data = await res.json();
+            if (res.ok) {
+                currentUser = data.usuario;
+                document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
+                document.getElementById('loginBox').classList.remove('active');
+                document.getElementById('gameBox').classList.add('active');
+                cargarOpciones();
+                generarTablero();
+            } else {
+                document.getElementById('loginMsg').innerText = '❌ ' + data.detail;
+            }
+        }
+
+        function logout() {
+            currentUser = null; selectedNumbers = [];
+            document.getElementById('gameBox').classList.remove('active');
+            document.getElementById('loginBox').classList.add('active');
+            document.getElementById('loginMsg').innerText = '';
+            document.getElementById('loginUser').value = '';
+            document.getElementById('loginPass').value = '';
+        }
+
+        // Generar los 100 botones (00 al 99)
+        function generarTablero() {
+            const grid = document.getElementById('numberGrid');
+            grid.innerHTML = '';
+            for (let i = 0; i < 100; i++) {
+                const num = i.toString().padStart(2, '0');
+                const btn = document.createElement('button');
+                btn.className = 'num-btn';
+                btn.innerText = num;
+                btn.dataset.num = num;
+                btn.onclick = () => toggleNumber(num, btn);
+                grid.appendChild(btn);
+            }
+        }
+
+        async function cargarRecibo() {
+            const numRecibo = document.getElementById('reciboReferencia').value;
+            if (!numRecibo) {
+                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Ingrese un número de recibo</span>';
+                return;
+            }
+            
+            try {
+                const res = await fetch(API + '/recibo/' + numRecibo);
+                if (!res.ok) {
+                    const data = await res.json();
+                    document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
+                    return;
+                }
+                
+                const data = await res.json();
+                
+                // 1. Llenar campos de cliente y precio
+                document.getElementById('clienteInput').value = data.cliente;
+                document.getElementById('precioInput').value = data.precio_unitario;
+                
+                // 2. Limpiar selección previa
+                document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
+                selectedNumbers = [];
+                
+                // 3. Marcar los números del recibo
+                data.numeros.forEach(num => {
+                    const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
+                    if (btn) {
+                        btn.classList.add('selected');
+                        selectedNumbers.push(num);
+                    }
+                });
+                
+                document.getElementById('resultMsg').innerHTML = `<span class="success">✅ Recibo ${numRecibo} cargado! ${data.numeros.length} números seleccionados.</span>`;
+                
+            } catch (error) {
+                document.getElementById('resultMsg').innerHTML = `<span class="error">❌ Error de conexión</span>`;
+            }
+        }
+
+        function toggleNumber(num, btn) {
+            const idx = selectedNumbers.indexOf(num);
+            if (idx > -1) {
+                selectedNumbers.splice(idx, 1);
+                btn.classList.remove('selected');
+            } else {
+                selectedNumbers.push(num);
+                btn.classList.add('selected');
+            }
+        }
+
+        // Cargar opciones rápidas desde la base de datos
+        async function cargarOpciones() {
+            const container = document.getElementById('opcionesContainer');
+            container.innerHTML = '';
+            const res = await fetch(API + '/opciones');
+            const opciones = await res.json();
+            
+            if (opciones.length === 0) {
+                container.innerHTML = '<div style="color:#aaa; font-size:14px; text-align:center; width:100%;">No hay opciones rápidas configuradas</div>';
+                return;
+            }
+            
+            opciones.forEach(op => {
+                const btn = document.createElement('button');
+                btn.className = 'opcion-btn';
+                btn.innerText = op.nombre_opcion;
+                btn.onclick = () => seleccionarOpcion(op.numeros_incluidos);
+                container.appendChild(btn);
+            });
+        }
+
+        function limpiarSeleccion() {
+            // Desmarcar todos los botones
+            document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
+            // Vaciar la lista de seleccionados
+            selectedNumbers = [];
+            // Limpiar el mensaje de resultado
+            document.getElementById('resultMsg').innerHTML = '';
+        }
+
+        function seleccionarOpcion(numerosStr) {
+            // Limpiar selección previa
+            document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
+            selectedNumbers = [];
+            // Dividir la cadena y seleccionar
+            const nums = numerosStr.split(',');
+            nums.forEach(n => {
+                const btn = document.querySelector(`.num-btn[data-num="${n}"]`);
+                if (btn) { btn.classList.add('selected'); selectedNumbers.push(n); }
+            });
+        }
+
+        // Vender
+        // Vender
+        async function vender() {
+            const cliente = document.getElementById('clienteInput').value;
+            const precio = document.getElementById('precioInput').value;
+            if (!cliente || !precio) {
+                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Complete Cliente y Precio</span>';
+                return;
+            }
+            if (selectedNumbers.length === 0) {
+                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Seleccione al menos un número</span>';
+                return;
+            }
+            
+            // Enviar la solicitud esperando un PDF
+            const res = await fetch(API + '/vender', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    nombre_vendedor: currentUser,
+                    cliente: cliente,
+                    numeros: selectedNumbers,
+                    precio_unitario: parseFloat(precio)
+                })
+            });
+            
+            if (res.ok) {
+                // Descargar el PDF automáticamente
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `recibo_${Date.now()}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                // Mensaje en pantalla
+                document.getElementById('resultMsg').innerHTML = '<span class="success">✅ Venta exitosa! El recibo se ha descargado.</span>';
+                
+                // Limpiar selección
+                document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
+                selectedNumbers = [];
+                document.getElementById('clienteInput').value = '';
+                document.getElementById('precioInput').value = '';
+            } else {
+                const data = await res.json();
+                document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
+            }
+        }
+    </script>
+</body>
+</html>
