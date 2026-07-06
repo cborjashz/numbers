@@ -89,27 +89,6 @@ def generar_recibo_pdf(num_recibo, fecha_emision, cliente, numero_jugado, precio
         c.drawCentredString(width/2, y_pos_numeros, texto_fila)
         y_pos_numeros -= 35  # Espacio entre filas
     
-    # === 3. PRECIO Y CANTIDAD (Sin línea punteada, alineados juntos) ===
-    # Ajuste #2: Eliminamos la línea punteada y ponemos precio/cantidad en una sola línea limpia
-    y_pos_precio = y_pos_numeros + 10
-    c.setFont("Helvetica", 12)
-    c.drawString(50, y_pos_precio, f"Cantidad: {cantidad}")
-    c.drawRightString(width - 50, y_pos_precio, f"Precio: L. {precio_unitario:.2f}")
-    
-    # === 4. TOTAL ===
-    y_pos_total = y_pos_precio + 30
-    c.setFont("Helvetica-Bold", 20)
-    c.drawString(50, y_pos_total, "Total L.")
-    c.setFont("Helvetica-Bold", 28)
-    c.drawRightString(width - 50, y_pos_total, f"{total:.2f}")
-    
-    # === 5. LÍNEA AMARILLA SÓLIDA FINAL ===
-    y_pos_linea_final = y_pos_total + 20
-    c.setDash(1, 0)
-    c.setStrokeColor(yellow)
-    c.setLineWidth(2)
-    c.line(50, y_pos_linea_final, width - 50, y_pos_linea_final)
-    
     # === CIERRE Y PIE DE PÁGINA (Corregido) ===
     # El cierre se dibuja AHORA, justo debajo de la última fila de números
     y_pos_cierre = y_pos_numeros + 15  # Un poco de espacio después de los números
@@ -181,7 +160,7 @@ async def vender(venta: VentaRequest):
         # Zona horaria de Managua (UTC -6)
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
-        
+
         cierre = calcular_cierre(ahora.hour)
         total = venta.precio_unitario * len(venta.numeros)
         
