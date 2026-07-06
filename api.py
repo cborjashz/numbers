@@ -109,15 +109,18 @@ def generar_recibo_pdf(num_recibo, fecha_emision, cliente, numero_jugado, precio
     c.setLineWidth(2)
     c.line(50, y_pos_linea_final, width - 50, y_pos_linea_final)
     
-    # === 6. CIERRE Y PIE DE PÁGINA (Ajuste #1: Movido al final) ===
-    y_pos_cierre = y_pos_linea_final + 40
+    # === 6. CIERRE Y PIE DE PÁGINA (Ajuste definitivo) ===
+    # Calculamos una posición fija pero segura, justo debajo de la línea amarilla final
+    # Sin importar cuántos números haya, esto siempre estará al final de la hoja
+    y_pos_cierre = y_pos_linea_final + 50
+    
     c.setFont("Helvetica-Bold", 16)
     c.setFillColor(black)
     c.drawString(50, y_pos_cierre, cierre)
     
     c.setFont("Helvetica", 10)
-    c.drawString(50, y_pos_cierre + 30, fecha_emision)
-    c.drawRightString(width - 50, y_pos_cierre + 30, vendedor)
+    c.drawString(50, y_pos_cierre + 35, fecha_emision)
+    c.drawRightString(width - 50, y_pos_cierre + 35, vendedor)
     
     # === 7. FINALIZAR ===
     c.save()
