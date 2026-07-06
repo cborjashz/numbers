@@ -13,7 +13,8 @@ from fastapi.responses import FileResponse
 import os
 
 # ===== CONFIGURACIÓN =====
-DATABASE_URL = "postgresql://postgres:Cbp43z_121990@db.vfjimjmwnayrairkkdmp.supabase.co:5432/postgres"
+## DATABASE_URL = "postgresql://postgres:Cbp43z_121990@db.vfjimjmwnayrairkkdmp.supabase.co:5432/postgres"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 app = FastAPI(title="Sistema de Lotería - Web")
 templates = Jinja2Templates(directory="templates")
