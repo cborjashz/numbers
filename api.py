@@ -11,6 +11,7 @@ from reportlab.lib.colors import black, white, yellow
 import io
 from fastapi.responses import FileResponse
 import os
+from datetime import timezone, timedelta
 
 # ===== CONFIGURACIÓN =====
 ## DATABASE_URL = "postgresql://postgres:Cbp43z_121990@db.vfjimjmwnayrairkkdmp.supabase.co:5432/postgres"
@@ -109,18 +110,35 @@ def generar_recibo_pdf(num_recibo, fecha_emision, cliente, numero_jugado, precio
     c.setLineWidth(2)
     c.line(50, y_pos_linea_final, width - 50, y_pos_linea_final)
     
-    # === 6. CIERRE Y PIE DE PÁGINA (Ajuste definitivo) ===
-    # Calculamos una posición fija pero segura, justo debajo de la línea amarilla final
-    # Sin importar cuántos números haya, esto siempre estará al final de la hoja
-    y_pos_cierre = y_pos_linea_final + 50
+    # === CIERRE Y PIE DE PÁGINA (Corregido) ===
+    # El cierre se dibuja AHORA, justo debajo de la última fila de números
+    y_pos_cierre = y_pos_numeros + 15  # Un poco de espacio después de los números
     
+    # Primero dibujamos el texto del cierre
     c.setFont("Helvetica-Bold", 16)
     c.setFillColor(black)
     c.drawString(50, y_pos_cierre, cierre)
     
+    # Luego la fecha y el vendedor (alineados a la derecha del cierre)
     c.setFont("Helvetica", 10)
-    c.drawString(50, y_pos_cierre + 35, fecha_emision)
-    c.drawRightString(width - 50, y_pos_cierre + 35, vendedor)
+    c.drawRightString(width - 50, y_pos_cierre, fecha_emision)
+    c.drawRightString(width - 50, y_pos_cierre - 20, vendedor)
+    
+    # Línea amarilla separadora debajo del cierre
+    c.setStrokeColor(yellow)
+    c.setLineWidth(1)
+    c.line(50, y_pos_cierre + 20, width - 50, y_pos_cierre + 20)
+    
+    # Total y precio/cantidad debajo de la línea
+    y_pos_total = y_pos_cierre + 40
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(50, y_pos_total, "Total L.")
+    c.setFont("Helvetica-Bold", 28)
+    c.drawRightString(width - 50, y_pos_total, f"{total:.2f}")
+    
+    c.setFont("Helvetica", 12)
+    c.drawString(50, y_pos_total + 25, f"Cantidad: {cantidad}")
+    c.drawRightString(width - 50, y_pos_total + 25, f"Precio: L. {precio_unitario:.2f}")
     
     # === 7. FINALIZAR ===
     c.save()
@@ -160,7 +178,10 @@ async def vender(venta: VentaRequest):
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
         
-        ahora = datetime.now()
+        # Zona horaria de Managua (UTC -6)
+        managua_tz = timezone(timedelta(hours=-6))
+        ahora = datetime.now(managua_tz)
+        
         cierre = calcular_cierre(ahora.hour)
         total = venta.precio_unitario * len(venta.numeros)
         
