@@ -232,7 +232,7 @@ async def obtener_recibo(num_recibo: int):
         
         # Buscar todas las ventas con ese número de recibo
         cursor.execute("""
-            SELECT v.cliente, v.precio_unitario, v.numero_jugado, v.cierre_asignado, u.nombre_usuario
+            SELECT v.cliente, v.precio_unitario, v.numero_jugado, v.cierre_asignado, u.nombre_usuario, v.fecha_hora
             FROM ventas v
             JOIN usuarios u ON v.id_usuario = u.id_usuario
             WHERE v.num_recibo = %s
@@ -246,14 +246,17 @@ async def obtener_recibo(num_recibo: int):
         # Extraer datos (todos los registros tienen los mismos datos de cabecera)
         cliente = resultados[0][0]
         precio_unitario = resultados[0][1]
-        cierre = resultados[0][3]           # <--- Extraer cierre
-        vendedor = resultados[0][4]         # <--- Extraer vendedor
-        numeros = [fila[2] for fila in resultados]  # Lista de todos los números
+        cierre = resultados[0][3]
+        vendedor = resultados[0][4]
+        fecha_emision = resultados[0][5].strftime("%d-%m-%Y %H:%M:%S")  # <--- Ahora índice 5 existe porque lo pediste
+        numeros = [fila[2] for fila in resultados]
+        
+        # Calcular total (sumando el precio_unitario de cada fila)
+        total = sum(fila[1] for fila in resultados)  # <--- Índice 1 es precio_unitario
         
         conn.close()
         
-        # 4. Generar el PDF usando la misma función que ya tienes
-        fecha_emision = resultados[0][5].strftime("%d-%m-%Y %H:%M:%S")
+        # 4. Generar el PDF usando la misma función que ya tienes       
         pdf_buffer = generar_recibo_pdf(
             num_recibo=num_recibo,
             fecha_emision=fecha_emision,
