@@ -232,9 +232,10 @@ async def obtener_recibo(num_recibo: int):
         
         # Buscar todas las ventas con ese número de recibo
         cursor.execute("""
-            SELECT cliente, precio_unitario, numero_jugado
-            FROM ventas
-            WHERE num_recibo = %s
+            SELECT v.cliente, v.precio_unitario, v.numero_jugado, v.cierre_asignado, u.nombre_usuario
+            FROM ventas v
+            JOIN usuarios u ON v.id_usuario = u.id_usuario
+            WHERE v.num_recibo = %s
         """, (num_recibo,))
         
         resultados = cursor.fetchall()
@@ -242,18 +243,36 @@ async def obtener_recibo(num_recibo: int):
             conn.close()
             raise HTTPException(status_code=404, detail="Recibo no encontrado")
         
-        # Extraer datos (todos los registros tienen el mismo cliente y precio)
+        # Extraer datos (todos los registros tienen los mismos datos de cabecera)
         cliente = resultados[0][0]
         precio_unitario = resultados[0][1]
+        cierre = resultados[0][3]           # <--- Extraer cierre
+        vendedor = resultados[0][4]         # <--- Extraer vendedor
         numeros = [fila[2] for fila in resultados]  # Lista de todos los números
         
         conn.close()
         
-        return {
-            "cliente": cliente,
-            "precio_unitario": precio_unitario,
-            "numeros": numeros
-        }
+        # 4. Generar el PDF usando la misma función que ya tienes
+        fecha_emision = resultados[0][5].strftime("%d-%m-%Y %H:%M:%S")
+        pdf_buffer = generar_recibo_pdf(
+            num_recibo=num_recibo,
+            fecha_emision=fecha_emision,
+            cliente=cliente,
+            numero_jugado=", ".join(numeros),  # Lista de números
+            precio_unitario=precio_unitario,
+            cantidad=len(numeros),
+            total=sum(venta[4] for venta in resultados),  # Suma de todos los totales
+            cierre=cierre,
+            vendedor=vendedor
+        )
+        
+        # 5. Devolver el PDF como respuesta
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=recibo_{num_recibo}.pdf"}
+        )
         
     except Exception as e:
         if conn:
