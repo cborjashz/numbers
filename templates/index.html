@@ -51,9 +51,18 @@
 
         <!-- JUEGO -->
         <div id="gameBox" class="game-box">
-            <div style="display:flex; justify-content:space-between;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
                 <span id="userDisplay" style="font-weight:bold;"></span>
-                <button class="logout" onclick="logout()" style="width:auto; padding:5px 15px;">Salir</button>
+                
+                <!-- ICONOS -->
+                <div style="display:flex; gap:15px; align-items:center;">
+                    <!-- Icono de Reimpresión -->
+                    <span onclick="abrirReimpresion()" style="cursor:pointer; font-size:20px;" title="Reimprimir recibo">🖨️</span>
+                    <!-- Icono de Reporte -->
+                    <span onclick="abrirReporte()" style="cursor:pointer; font-size:20px;" title="Reporte del día">📊</span>
+                    <!-- Botón Salir -->
+                    <button class="logout" onclick="logout()" style="width:auto; padding:5px 15px;">Salir</button>
+                </div>
             </div>
 
             <!-- Cargar recibo de referencia -->
@@ -80,6 +89,26 @@
             </div>
             <button onclick="vender()">🟢 VENDER</button>
             <div id="resultMsg" class="message"></div>
+        </div>
+        <!-- MODAL DE REIMPRESIÓN -->
+        <div id="modalReimpresion" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; justify-content:center; align-items:center;">
+            <div style="background:#2d2d44; padding:30px; border-radius:15px; width:300px; text-align:center;">
+                <h3 style="margin-top:0;">🖨️ Reimprimir Recibo</h3>
+                <input type="number" id="reciboReimprimir" placeholder="Número de recibo" style="width:100%; padding:10px; margin:10px 0; border-radius:8px; border:none;">
+                <button onclick="reimprimirDesdeModal()" style="width:100%; padding:10px; background:#ffaa00; color:black; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">Buscar y Descargar</button>
+                <button onclick="cerrarReimpresion()" style="width:100%; padding:10px; margin-top:10px; background:#555; color:white; border:none; border-radius:8px; cursor:pointer;">Cerrar</button>
+                <div id="msgReimpresion" style="margin-top:10px; font-size:14px;"></div>
+            </div>
+        </div>
+        <!-- MODAL DE REPORTE -->
+        <div id="modalReporte" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; justify-content:center; align-items:center;">
+            <div style="background:#2d2d44; padding:30px; border-radius:15px; width:400px; max-height:80vh; overflow-y:auto; text-align:center;">
+                <h3 style="margin-top:0;">📊 Reporte del Día</h3>
+                <div id="contenidoReporte" style="text-align:left; margin:15px 0;">
+                    <p style="text-align:center; color:#aaa;">Cargando reporte...</p>
+                </div>
+                <button onclick="cerrarReporte()" style="width:100%; padding:10px; background:#555; color:white; border:none; border-radius:8px; cursor:pointer;">Cerrar</button>
+            </div>
         </div>
     </div>
 
