@@ -310,6 +310,85 @@
                 document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
             }
         }
+    
+        // ===== FUNCIONES PARA MODALES =====
+
+        // Abrir y cerrar modal de reimpresión
+        function abrirReimpresion() {
+            document.getElementById('modalReimpresion').style.display = 'flex';
+            document.getElementById('reciboReimprimir').value = '';
+            document.getElementById('msgReimpresion').innerHTML = '';
+        }
+
+        function cerrarReimpresion() {
+            document.getElementById('modalReimpresion').style.display = 'none';
+        }
+
+        // Reimprimir desde el modal
+        async function reimprimirDesdeModal() {
+            const numRecibo = document.getElementById('reciboReimprimir').value;
+            if (!numRecibo) {
+                document.getElementById('msgReimpresion').innerHTML = '<span style="color:#ff5555;">❌ Ingrese un número de recibo</span>';
+                return;
+            }
+            
+            const res = await fetch(API + '/recibo/' + numRecibo);
+            
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `recibo_${numRecibo}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                
+                document.getElementById('msgReimpresion').innerHTML = '<span style="color:#00a86b;">✅ Recibo descargado exitosamente</span>';
+                setTimeout(() => cerrarReimpresion(), 1500);
+            } else {
+                const data = await res.json();
+                document.getElementById('msgReimpresion').innerHTML = `<span style="color:#ff5555;">❌ ${data.detail}</span>`;
+            }
+        }
+
+        // Abrir y cerrar modal de reporte
+        function abrirReporte() {
+            document.getElementById('modalReporte').style.display = 'flex';
+            document.getElementById('contenidoReporte').innerHTML = '<p style="text-align:center; color:#aaa;">Cargando reporte...</p>';
+            cargarReporte();
+        }
+
+        function cerrarReporte() {
+            document.getElementById('modalReporte').style.display = 'none';
+        }
+
+        // Cargar el reporte desde el servidor
+        async function cargarReporte() {
+            try {
+                const res = await fetch(API + '/reporte/diario');
+                if (!res.ok) {
+                    document.getElementById('contenidoReporte').innerHTML = '<p style="color:#ff5555;">❌ Error al cargar reporte</p>';
+                    return;
+                }
+                const data = await res.json();
+                
+                // Mostrar el reporte (por ahora solo el total)
+                document.getElementById('contenidoReporte').innerHTML = `
+                    <div style="margin-bottom:20px;">
+                        <p><strong>Total vendido hoy:</strong> L. ${data.total_ventas}</p>
+                        <p><strong>Cantidad de recibos:</strong> ${data.cantidad_recibos}</p>
+                    </div>
+                    <div style="text-align:left; font-size:14px; max-height:200px; overflow-y:auto; background:#1e1e2e; padding:10px; border-radius:8px;">
+                        <strong>Últimos recibos:</strong><br>
+                        ${data.recibos.map(r => `Recibo #${r.num_recibo} - L. ${r.total}`).join('<br>')}
+                    </div>
+                `;
+            } catch (error) {
+                document.getElementById('contenidoReporte').innerHTML = '<p style="color:#ff5555;">❌ Error de conexión</p>';
+            }
+        }    
     </script>
 </body>
 </html>
