@@ -349,7 +349,7 @@
                 setTimeout(() => cerrarReimpresion(), 1500);
             } else {
                 const data = await res.json();
-                document.getElementById('msgReimpresion').innerHTML = `<span style="color:#ff5555;">❌ ${data.detail}</span>`;
+                document.getElementById('msgReimpresion').innerHTML = `<span style="color:#ff5555;">❌ ${String(data.detail)}</span>`;
             }
         }
 
