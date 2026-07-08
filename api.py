@@ -109,14 +109,14 @@ def generar_recibo_pdf(num_recibo, fecha_emision, cliente, numero_jugado, precio
     c.line(50, y_pos_cierre + 20, width - 50, y_pos_cierre + 20)
     
     # Total y precio/cantidad debajo de la línea
-    y_pos_total = y_pos_cierre + 40
+    y_pos_total = int(y_pos_cierre) + 40
     c.setFont("Helvetica-Bold", 20)
     c.drawString(50, y_pos_total, "Total L.")
     c.setFont("Helvetica-Bold", 28)
     c.drawRightString(width - 50, y_pos_total, f"{total:.2f}")
     
     c.setFont("Helvetica", 12)
-    c.drawString(50, y_pos_total + 25, f"Cantidad: {cantidad}")
+    c.drawString(50, y_pos_total + 25, f"Cantidad: {str(cantidad)}")
     c.drawRightString(width - 50, y_pos_total + 25, f"Precio: L. {precio_unitario:.2f}")
     
     # === 7. FINALIZAR ===
