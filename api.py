@@ -258,7 +258,10 @@ async def obtener_recibo(num_recibo: int):
         numeros_json = resultado[2]
 
         # Convertir JSONB de vuelta a lista de strings
-        numeros = json.loads(numeros_json)
+        if isinstance(numeros_json, str):
+            numeros = json.loads(numeros_json)
+        else:
+            numeros = numeros_json
 
         conn.close()
 
