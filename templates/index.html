@@ -51,18 +51,9 @@
 
         <!-- JUEGO -->
         <div id="gameBox" class="game-box">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; justify-content:space-between;">
                 <span id="userDisplay" style="font-weight:bold;"></span>
-                
-                <!-- ICONOS -->
-                <div style="display:flex; gap:15px; align-items:center;">
-                    <!-- Icono de Reimpresión -->
-                    <span onclick="abrirReimpresion()" style="cursor:pointer; font-size:20px;" title="Reimprimir recibo">🖨️</span>
-                    <!-- Icono de Reporte -->
-                    <span onclick="abrirReporte()" style="cursor:pointer; font-size:20px;" title="Reporte del día">📊</span>
-                    <!-- Botón Salir -->
-                    <button class="logout" onclick="logout()" style="width:auto; padding:5px 15px;">Salir</button>
-                </div>
+                <button class="logout" onclick="logout()" style="width:auto; padding:5px 15px;">Salir</button>
             </div>
 
             <!-- Cargar recibo de referencia -->
@@ -89,26 +80,6 @@
             </div>
             <button onclick="vender()">🟢 VENDER</button>
             <div id="resultMsg" class="message"></div>
-        </div>
-        <!-- MODAL DE REIMPRESIÓN -->
-        <div id="modalReimpresion" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; justify-content:center; align-items:center;">
-            <div style="background:#2d2d44; padding:30px; border-radius:15px; width:300px; text-align:center;">
-                <h3 style="margin-top:0;">🖨️ Reimprimir Recibo</h3>
-                <input type="number" id="reciboReimprimir" placeholder="Número de recibo" style="width:100%; padding:10px; margin:10px 0; border-radius:8px; border:none;">
-                <button onclick="reimprimirDesdeModal()" style="width:100%; padding:10px; background:#ffaa00; color:black; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">Buscar y Descargar</button>
-                <button onclick="cerrarReimpresion()" style="width:100%; padding:10px; margin-top:10px; background:#555; color:white; border:none; border-radius:8px; cursor:pointer;">Cerrar</button>
-                <div id="msgReimpresion" style="margin-top:10px; font-size:14px;"></div>
-            </div>
-        </div>
-        <!-- MODAL DE REPORTE -->
-        <div id="modalReporte" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; justify-content:center; align-items:center;">
-            <div style="background:#2d2d44; padding:30px; border-radius:15px; width:400px; max-height:80vh; overflow-y:auto; text-align:center;">
-                <h3 style="margin-top:0;">📊 Reporte del Día</h3>
-                <div id="contenidoReporte" style="text-align:left; margin:15px 0;">
-                    <p style="text-align:center; color:#aaa;">Cargando reporte...</p>
-                </div>
-                <button onclick="cerrarReporte()" style="width:100%; padding:10px; background:#555; color:white; border:none; border-radius:8px; cursor:pointer;">Cerrar</button>
-            </div>
         </div>
     </div>
 
@@ -310,85 +281,6 @@
                 document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
             }
         }
-    
-        // ===== FUNCIONES PARA MODALES =====
-
-        // Abrir y cerrar modal de reimpresión
-        function abrirReimpresion() {
-            document.getElementById('modalReimpresion').style.display = 'flex';
-            document.getElementById('reciboReimprimir').value = '';
-            document.getElementById('msgReimpresion').innerHTML = '';
-        }
-
-        function cerrarReimpresion() {
-            document.getElementById('modalReimpresion').style.display = 'none';
-        }
-
-        // Reimprimir desde el modal
-        async function reimprimirDesdeModal() {
-            const numRecibo = document.getElementById('reciboReimprimir').value;
-            if (!numRecibo) {
-                document.getElementById('msgReimpresion').innerHTML = '<span style="color:#ff5555;">❌ Ingrese un número de recibo</span>';
-                return;
-            }
-            
-            const res = await fetch(API + '/recibo/' + numRecibo);
-            
-            if (res.ok) {
-                const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `recibo_${numRecibo}.pdf`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-                
-                document.getElementById('msgReimpresion').innerHTML = '<span style="color:#00a86b;">✅ Recibo descargado exitosamente</span>';
-                setTimeout(() => cerrarReimpresion(), 1500);
-            } else {
-                const data = await res.json();
-                document.getElementById('msgReimpresion').innerHTML = `<span style="color:#ff5555;">❌ ${String(data.detail)}</span>`;
-            }
-        }
-
-        // Abrir y cerrar modal de reporte
-        function abrirReporte() {
-            document.getElementById('modalReporte').style.display = 'flex';
-            document.getElementById('contenidoReporte').innerHTML = '<p style="text-align:center; color:#aaa;">Cargando reporte...</p>';
-            cargarReporte();
-        }
-
-        function cerrarReporte() {
-            document.getElementById('modalReporte').style.display = 'none';
-        }
-
-        // Cargar el reporte desde el servidor
-        async function cargarReporte() {
-            try {
-                const res = await fetch(API + '/reporte/diario');
-                if (!res.ok) {
-                    document.getElementById('contenidoReporte').innerHTML = '<p style="color:#ff5555;">❌ Error al cargar reporte</p>';
-                    return;
-                }
-                const data = await res.json();
-                
-                // Mostrar el reporte (por ahora solo el total)
-                document.getElementById('contenidoReporte').innerHTML = `
-                    <div style="margin-bottom:20px;">
-                        <p><strong>Total vendido hoy:</strong> L. ${data.total_ventas}</p>
-                        <p><strong>Cantidad de recibos:</strong> ${data.cantidad_recibos}</p>
-                    </div>
-                    <div style="text-align:left; font-size:14px; max-height:200px; overflow-y:auto; background:#1e1e2e; padding:10px; border-radius:8px;">
-                        <strong>Últimos recibos:</strong><br>
-                        ${data.recibos.map(r => `Recibo #${r.num_recibo} - L. ${r.total}`).join('<br>')}
-                    </div>
-                `;
-            } catch (error) {
-                document.getElementById('contenidoReporte').innerHTML = '<p style="color:#ff5555;">❌ Error de conexión</p>';
-            }
-        }    
     </script>
 </body>
 </html>

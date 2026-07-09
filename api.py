@@ -109,14 +109,14 @@ def generar_recibo_pdf(num_recibo, fecha_emision, cliente, numero_jugado, precio
     c.line(50, y_pos_cierre + 20, width - 50, y_pos_cierre + 20)
     
     # Total y precio/cantidad debajo de la línea
-    y_pos_total = int(y_pos_cierre) + 40
+    y_pos_total = y_pos_cierre + 40
     c.setFont("Helvetica-Bold", 20)
     c.drawString(50, y_pos_total, "Total L.")
     c.setFont("Helvetica-Bold", 28)
     c.drawRightString(width - 50, y_pos_total, f"{total:.2f}")
     
     c.setFont("Helvetica", 12)
-    c.drawString(50, y_pos_total + 25, f"Cantidad: {str(cantidad)}")
+    c.drawString(50, y_pos_total + 25, f"Cantidad: {cantidad}")
     c.drawRightString(width - 50, y_pos_total + 25, f"Precio: L. {precio_unitario:.2f}")
     
     # === 7. FINALIZAR ===
@@ -232,10 +232,9 @@ async def obtener_recibo(num_recibo: int):
         
         # Buscar todas las ventas con ese número de recibo
         cursor.execute("""
-            SELECT v.cliente, v.precio_unitario, v.numero_jugado, v.cierre_asignado, u.nombre_usuario, v.fecha_hora
-            FROM ventas v
-            JOIN usuarios u ON v.id_usuario = u.id_usuario
-            WHERE v.num_recibo = %s
+            SELECT cliente, precio_unitario, numero_jugado
+            FROM ventas
+            WHERE num_recibo = %s
         """, (num_recibo,))
         
         resultados = cursor.fetchall()
@@ -243,39 +242,18 @@ async def obtener_recibo(num_recibo: int):
             conn.close()
             raise HTTPException(status_code=404, detail="Recibo no encontrado")
         
-        # Extraer datos (todos los registros tienen los mismos datos de cabecera)
+        # Extraer datos (todos los registros tienen el mismo cliente y precio)
         cliente = resultados[0][0]
         precio_unitario = resultados[0][1]
-        cierre = resultados[0][3]
-        vendedor = resultados[0][4]
-        fecha_emision = resultados[0][5].strftime("%d-%m-%Y %H:%M:%S")  # <--- Ahora índice 5 existe porque lo pediste
-        numeros = [fila[2] for fila in resultados]
-        
-        # Calcular total (sumando el precio_unitario de cada fila)
-        total = sum(fila[1] for fila in resultados)  # <--- Índice 1 es precio_unitario
+        numeros = [fila[2] for fila in resultados]  # Lista de todos los números
         
         conn.close()
         
-        # 4. Generar el PDF usando la misma función que ya tienes       
-        pdf_buffer = generar_recibo_pdf(
-            num_recibo=num_recibo,
-            fecha_emision=fecha_emision,
-            cliente=cliente,
-            numero_jugado=", ".join(numeros),  # Lista de números
-            precio_unitario=precio_unitario,
-            cantidad=len(numeros),
-            total=sum(venta[4] for venta in resultados),  # Suma de todos los totales
-            cierre=cierre,
-            vendedor=vendedor
-        )
-        
-        # 5. Devolver el PDF como respuesta
-        from fastapi.responses import StreamingResponse
-        return StreamingResponse(
-            pdf_buffer,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename=recibo_{num_recibo}.pdf"}
-        )
+        return {
+            "cliente": cliente,
+            "precio_unitario": precio_unitario,
+            "numeros": numeros
+        }
         
     except Exception as e:
         if conn:
