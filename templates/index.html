@@ -60,6 +60,7 @@
             <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
                 <input type="number" id="reciboReferencia" placeholder="Recibo de referencia" style="flex: 1;">
                 <button onclick="cargarRecibo()" style="width: auto; padding: 10px 20px; background: #ffaa00; color: black;">📂 Cargar Recibo</button>
+                <button onclick="reimprimirRecibo()" style="width: auto; padding: 10px 15px; background: #2196f3; color: white;" title="Reimprimir recibo">🖨️</button>
             </div>
 
             <!-- Opciones rápidas (cargadas desde la BD) -->
@@ -176,6 +177,39 @@
                 document.getElementById('resultMsg').innerHTML = `<span class="error">❌ Error de conexión</span>`;
             }
         }
+
+        async function reimprimirRecibo() {
+            const numRecibo = document.getElementById('reciboReferencia').value;
+            if (!numRecibo) {
+                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Ingrese un número de recibo para reimprimir</span>';
+                return;
+            }
+
+            try {
+                const res = await fetch(API + '/reimprimir/' + numRecibo);
+                if (!res.ok) {
+                    const data = await res.json();
+                    document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
+                    return;
+                }
+
+                // Descargar el PDF automáticamente (igual que en la venta)
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `recibo_${numRecibo}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                document.getElementById('resultMsg').innerHTML = `<span class="success">✅ Recibo ${numRecibo} reimpreso exitosamente!</span>`;
+
+            } catch (error) {
+             document.getElementById('resultMsg').innerHTML = `<span class="error">❌ Error de conexión al reimprimir</span>`;
+            }
+        }        
 
         function toggleNumber(num, btn) {
             const idx = selectedNumbers.indexOf(num);

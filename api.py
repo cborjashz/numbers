@@ -277,3 +277,75 @@ async def obtener_recibo(num_recibo: int):
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/reimprimir/{num_recibo}")
+async def reimprimir_recibo(num_recibo: int):
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+
+        # Hacemos un JOIN con usuarios para obtener el nombre del vendedor
+        cursor.execute("""
+            SELECT 
+                v.cliente,
+                v.precio_unitario,
+                v.numero_jugado,
+                v.fecha_hora,
+                v.cierre_asignado,
+                u.nombre_usuario
+            FROM ventas v
+            JOIN usuarios u ON v.id_usuario = u.id_usuario
+            WHERE v.num_recibo = %s
+            LIMIT 1
+        """, (num_recibo,))
+
+        resultado = cursor.fetchone()
+        if not resultado:
+            raise HTTPException(status_code=404, detail="Recibo no encontrado para reimprimir")
+
+        cliente = resultado[0]
+        precio_unitario = resultado[1]
+        numeros_json = resultado[2]
+        fecha_hora = resultado[3]
+        cierre = resultado[4]
+        nombre_vendedor = resultado[5]
+
+        # Convertir JSON a lista (puede ser string o lista ya convertida por psycopg2)
+        if isinstance(numeros_json, str):
+            numeros = json.loads(numeros_json)
+        else:
+            numeros = numeros_json
+
+        # Calcular total
+        total = precio_unitario * len(numeros)
+
+        # Formatear fecha para el PDF
+        fecha_str = fecha_hora.strftime("%d-%m-%Y %H:%M:%S")
+
+        conn.close()
+
+        # Generar PDF
+        pdf_buffer = generar_recibo_pdf(
+            num_recibo=num_recibo,
+            fecha_emision=fecha_str,
+            cliente=cliente,
+            numeros=numeros,
+            precio_unitario=precio_unitario,
+            total=total,
+            cierre=cierre,
+            vendedor=nombre_vendedor
+        )
+
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=recibo_{num_recibo}.pdf"}
+        )
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
