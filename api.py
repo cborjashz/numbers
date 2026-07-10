@@ -10,6 +10,7 @@ import io
 import os
 from datetime import timezone, timedelta
 import json
+import random
 
 # ===== CONFIGURACIÓN =====
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -179,9 +180,8 @@ async def vender(venta: VentaRequest):
                 detail=f"El precio por número (L. {venta.precio_unitario}) supera el límite permitido de L. {limite_venta}"
             )
 
-        # 2. Obtener el siguiente número de recibo desde la secuencia
-        cursor.execute("SELECT nextval('seq_num_recibo')")
-        num_recibo = cursor.fetchone()[0]
+        # 2. Generar numero de recibo de forma aleatoria y unica
+        num_recibo = int(f"{int(ahora.timestamp() * 1000)}{random.randint(100, 999)}")
 
         # 3. Convertir la lista de números a JSONB
         numeros_json = json.dumps(venta.numeros)
