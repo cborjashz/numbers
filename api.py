@@ -181,7 +181,7 @@ async def vender(venta: VentaRequest):
             )
 
         # 2. Generar numero de recibo de forma aleatoria y unica
-        num_recibo = int(f"{int(ahora.timestamp() * 1000)}{random.randint(100, 999)}")
+        num_recibo = int(f"{(int(ahora.timestamp() * 1000)% 10000000)}{random.randint(100, 999)}")
 
         # 3. Convertir la lista de números a JSONB
         numeros_json = json.dumps(venta.numeros)
