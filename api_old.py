@@ -1,23 +1,21 @@
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from datetime import datetime
 import psycopg2
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
-from reportlab.lib.units import inch
-from reportlab.lib.colors import black, white, yellow
 import io
-from fastapi.responses import FileResponse
 import os
 from datetime import timezone, timedelta
+import json
+import random
 
 # ===== CONFIGURACIÓN =====
-## DATABASE_URL = "postgresql://postgres:Cbp43z_121990@db.vfjimjmwnayrairkkdmp.supabase.co:5432/postgres"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-app = FastAPI(title="Sistema de Lotería - Web")
+app = FastAPI(title="Sistema de Lotería - PDV")
 templates = Jinja2Templates(directory="templates")
 
 # ===== MODELOS =====
@@ -28,98 +26,90 @@ class LoginRequest(BaseModel):
 class VentaRequest(BaseModel):
     nombre_vendedor: str
     cliente: str
-    numeros: list[str]  # Ahora recibe una lista de números
+    numeros: list[str]
     precio_unitario: float
 
 # ===== LÓGICA DE CIERRES =====
-def calcular_cierre(hora_venta):
-    if hora_venta < 11: return "Cierre 1 (11am)"
-    elif 11 <= hora_venta < 15: return "Cierre 2 (3pm)"
-    elif 15 <= hora_venta < 21: return "Cierre 3 (9pm)"
-    else: return "Cierre 1 (11am - Día siguiente)"
+def calcular_cierre(hora_venta: int) -> str:
+    if hora_venta < 11:
+        return "Cierre 1 (11am)"
+    elif 11 <= hora_venta < 15:
+        return "Cierre 2 (3pm)"
+    elif 15 <= hora_venta < 21:
+        return "Cierre 3 (9pm)"
+    else:
+        return "Cierre 1 (11am - Día siguiente)"
 
-def generar_recibo_pdf(num_recibo, fecha_emision, cliente, numero_jugado, precio_unitario, cantidad, total, cierre, vendedor):
+def generar_recibo_pdf(num_recibo: int, fecha_emision: str, cliente: str, numeros: list, precio_unitario: float, total: float, cierre: str, vendedor: str) -> io.BytesIO:
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
-    
-    # === 1. ENCABEZADO ===
-    c.setStrokeColor(yellow)
+
+    # === ENCABEZADO ===
+    c.setStrokeColor((1, 0.84, 0))  # Amarillo
     c.setLineWidth(2)
     c.line(50, height - 50, width - 50, height - 50)
-    
+
     c.setFont("Helvetica-Bold", 18)
-    c.setFillColor(black)
-    c.drawCentredString(width/2, height - 80, "Comprobante de Pago")
-    
-    # Información del cliente (Ajuste #3: Primera letra mayúscula)
+    c.setFillColor((0, 0, 0))
+    c.drawCentredString(width / 2, height - 80, "Comprobante de Pago")
+
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, height - 120, "Cliente:")
     c.setFont("Helvetica", 12)
-    c.drawString(130, height - 120, cliente.title())  # <--- .title() aplicado
-    
+    c.drawString(130, height - 120, cliente.title())
+
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, height - 140, "Fecha de Emisión:")
     c.setFont("Helvetica", 12)
     c.drawString(200, height - 140, fecha_emision)
-    
+
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, height - 160, "Número de Recibo:")
     c.setFont("Helvetica", 12)
     c.drawString(200, height - 160, str(num_recibo))
-    
+
     c.setFont("Helvetica-Bold", 12)
     c.drawString(50, height - 180, "Vendedor:")
     c.setFont("Helvetica", 12)
     c.drawString(150, height - 180, vendedor)
-    
-    # Línea amarilla separadora del encabezado
-    c.setStrokeColor(yellow)
+
+    c.setStrokeColor((1, 0.84, 0))
     c.setLineWidth(1)
     c.line(50, height - 200, width - 50, height - 200)
-    
-    # === 2. NÚMEROS JUGADOS (Formateados en filas) ===
+
+    # === NÚMEROS JUGADOS ===
     c.setFont("Helvetica-Bold", 20)
-    numeros_lista = numero_jugado.split(", ")
-    filas = [numeros_lista[i:i+6] for i in range(0, len(numeros_lista), 6)]
-    
+    filas = [numeros[i:i+6] for i in range(0, len(numeros), 6)]
     y_pos_numeros = height - 250
     for fila in filas:
         texto_fila = ", ".join(fila)
-        c.drawCentredString(width/2, y_pos_numeros, texto_fila)
-        y_pos_numeros -= 35  # Espacio entre filas
-    
-    # === CIERRE Y PIE DE PÁGINA (Corregido) ===
-    # El cierre se dibuja AHORA, justo debajo de la última fila de números
-    y_pos_cierre = y_pos_numeros + 15  # Un poco de espacio después de los números
-    
-    # Primero dibujamos el texto del cierre
+        c.drawCentredString(width / 2, y_pos_numeros, texto_fila)
+        y_pos_numeros -= 35
+
+    # === CIERRE Y PIE ===
+    y_pos_cierre = y_pos_numeros + 15
     c.setFont("Helvetica-Bold", 16)
-    c.setFillColor(black)
     c.drawString(50, y_pos_cierre, cierre)
-    
-    # Luego la fecha y el vendedor (alineados a la derecha del cierre)
+
     c.setFont("Helvetica", 10)
     c.drawRightString(width - 50, y_pos_cierre, fecha_emision)
     c.drawRightString(width - 50, y_pos_cierre - 20, vendedor)
-    
-    # Línea amarilla separadora debajo del cierre
-    c.setStrokeColor(yellow)
+
+    c.setStrokeColor((1, 0.84, 0))
     c.setLineWidth(1)
     c.line(50, y_pos_cierre + 20, width - 50, y_pos_cierre + 20)
-    
-    # Total y precio/cantidad debajo de la línea
+
     y_pos_total = y_pos_cierre + 40
     c.setFont("Helvetica-Bold", 20)
     c.drawString(50, y_pos_total, "Total L.")
     c.setFont("Helvetica-Bold", 28)
     c.drawRightString(width - 50, y_pos_total, f"{total:.2f}")
-    
+
     c.setFont("Helvetica", 12)
-    c.drawString(50, y_pos_total + 25, f"Cantidad: {cantidad}")
+    c.drawString(50, y_pos_total + 25, f"Cantidad: {len(numeros)}")
     c.drawRightString(width - 50, y_pos_total + 25, f"Precio: L. {precio_unitario:.2f}")
-    
-    # === 7. FINALIZAR ===
+
     c.save()
     buffer.seek(0)
     return buffer
@@ -134,7 +124,10 @@ async def read_root(request: Request):
 async def login(data: LoginRequest):
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     cursor = conn.cursor()
-    cursor.execute("SELECT id_usuario, nombre_usuario, limite_venta FROM usuarios WHERE nombre_usuario = %s AND password_hash = %s", (data.usuario, data.password))
+    cursor.execute(
+        "SELECT id_usuario, nombre_usuario, limite_venta FROM usuarios WHERE nombre_usuario = %s AND password_hash = %s",
+        (data.usuario, data.password)
+    )
     resultado = cursor.fetchone()
     conn.close()
     if not resultado:
@@ -154,73 +147,92 @@ async def get_opciones():
 async def vender(venta: VentaRequest):
     conn = None
     try:
+        # === VALIDACIÓN DE PRECIO NEGATIVO ===
+        if venta.precio_unitario <= 0:
+            raise HTTPException(status_code=400, detail="El precio unitario debe ser mayor a 0")
+
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        conn.autocommit = False  # Inicia la transacción
         cursor = conn.cursor()
-        
-        # Zona horaria de Managua (UTC -6)
+
+        # Zona horaria de Managua
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
         cierre = calcular_cierre(ahora.hour)
         total = venta.precio_unitario * len(venta.numeros)
-        
-        # 1. Verificar que el vendedor existe y obtener su límite
-        cursor.execute("SELECT id_usuario, limite_venta FROM usuarios WHERE nombre_usuario = %s", (venta.nombre_vendedor,))
+
+        # 1. Verificar vendedor y su límite
+        cursor.execute(
+            "SELECT id_usuario, limite_venta FROM usuarios WHERE nombre_usuario = %s",
+            (venta.nombre_vendedor,)
+        )
         resultado = cursor.fetchone()
         if not resultado:
             raise HTTPException(status_code=404, detail="Vendedor no encontrado")
         id_usuario = resultado[0]
         limite_venta = resultado[1]
-        
-        # 2. Validar que el PRECIO UNITARIO no supere el límite del vendedor
-        # (El límite es por cada número, no por el total de la venta)
+
+        # Validar límite por número
         if limite_venta is not None and venta.precio_unitario > limite_venta:
             raise HTTPException(
-                status_code=400, 
-                detail=f"⚠️ El precio por número (L. {venta.precio_unitario}) supera el límite permitido de L. {limite_venta}. Cada número individual no puede superar ese valor."
+                status_code=400,
+                detail=f"El precio por número (L. {venta.precio_unitario}) supera el límite permitido de L. {limite_venta}"
             )
-        
-        # 3. Generar un número de recibo único para toda la venta
-        num_recibo = int(ahora.timestamp()) % 10000000
-        
-        # 4. Insertar TODOS los números en la base de datos (uno por uno)
-        ventas_insertadas = 0
-        for numero in venta.numeros:
-            sql = """
-                INSERT INTO ventas (num_recibo, id_usuario, cliente, numero_jugado, precio_unitario, cantidad, total, cierre_asignado)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
-            cursor.execute(sql, (num_recibo, id_usuario, venta.cliente, numero, venta.precio_unitario, 1, venta.precio_unitario, cierre))
-            ventas_insertadas += 1
-        
-        conn.commit()
-        conn.close()
 
+        # 2. Generar numero de recibo de forma aleatoria y unica
+        num_recibo = int(f"{(int(ahora.timestamp() * 1000)% 10000000)}{random.randint(100, 999)}")
+
+        # 3. Convertir la lista de números a JSONB
+        numeros_json = json.dumps(venta.numeros)
+
+        # 4. Insertar UN SOLO registro con el array JSON
+        sql_insert = """
+            INSERT INTO ventas (
+                num_recibo, id_usuario, cliente, numero_jugado, 
+                precio_unitario, cantidad, total, cierre_asignado, fecha_hora
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(sql_insert, (
+            num_recibo,
+            id_usuario,
+            venta.cliente,
+            numeros_json,
+            venta.precio_unitario,
+            len(venta.numeros),
+            total,
+            cierre,
+            ahora
+        ))
+
+        conn.commit()  # Confirmar la transacción
+
+        # Generar PDF
         fecha_str = ahora.strftime("%d-%m-%Y %H:%M:%S")
         pdf_buffer = generar_recibo_pdf(
             num_recibo=num_recibo,
             fecha_emision=fecha_str,
             cliente=venta.cliente,
-            numero_jugado=", ".join(venta.numeros),  # Mostrar todos los números
+            numeros=venta.numeros,
             precio_unitario=venta.precio_unitario,
-            cantidad=len(venta.numeros),
             total=total,
             cierre=cierre,
             vendedor=venta.nombre_vendedor
         )
-        
-        # Devolver el PDF como respuesta
-        from fastapi.responses import StreamingResponse
+
         return StreamingResponse(
             pdf_buffer,
             media_type="application/pdf",
             headers={"Content-Disposition": f"attachment; filename=recibo_{num_recibo}.pdf"}
         )
-        
+
     except Exception as e:
         if conn:
-            conn.rollback()
+            conn.rollback()  # Deshacer todo si algo falla
             conn.close()
+        # Si ya es una HTTPException, la relanzamos; si no, la envolvemos
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/recibo/{num_recibo}")
@@ -229,33 +241,111 @@ async def obtener_recibo(num_recibo: int):
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
-        
-        # Buscar todas las ventas con ese número de recibo
+
+        # Ahora buscamos UN solo registro
         cursor.execute("""
             SELECT cliente, precio_unitario, numero_jugado
             FROM ventas
             WHERE num_recibo = %s
         """, (num_recibo,))
-        
-        resultados = cursor.fetchall()
-        if not resultados:
-            conn.close()
+
+        resultado = cursor.fetchone()
+        if not resultado:
             raise HTTPException(status_code=404, detail="Recibo no encontrado")
-        
-        # Extraer datos (todos los registros tienen el mismo cliente y precio)
-        cliente = resultados[0][0]
-        precio_unitario = resultados[0][1]
-        numeros = [fila[2] for fila in resultados]  # Lista de todos los números
-        
+
+        cliente = resultado[0]
+        precio_unitario = resultado[1]
+        numeros_json = resultado[2]
+
+        # Convertir JSONB de vuelta a lista de strings
+        if isinstance(numeros_json, str):
+            numeros = json.loads(numeros_json)
+        else:
+            numeros = numeros_json
+
         conn.close()
-        
+
         return {
             "cliente": cliente,
             "precio_unitario": precio_unitario,
             "numeros": numeros
         }
-        
+
     except Exception as e:
         if conn:
             conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/reimprimir/{num_recibo}")
+async def reimprimir_recibo(num_recibo: int):
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+
+        # Hacemos un JOIN con usuarios para obtener el nombre del vendedor
+        cursor.execute("""
+            SELECT 
+                v.cliente,
+                v.precio_unitario,
+                v.numero_jugado,
+                v.fecha_hora,
+                v.cierre_asignado,
+                u.nombre_usuario
+            FROM ventas v
+            JOIN usuarios u ON v.id_usuario = u.id_usuario
+            WHERE v.num_recibo = %s
+            LIMIT 1
+        """, (num_recibo,))
+
+        resultado = cursor.fetchone()
+        if not resultado:
+            raise HTTPException(status_code=404, detail="Recibo no encontrado para reimprimir")
+
+        cliente = resultado[0]
+        precio_unitario = resultado[1]
+        numeros_json = resultado[2]
+        fecha_hora = resultado[3]
+        cierre = resultado[4]
+        nombre_vendedor = resultado[5]
+
+        # Convertir JSON a lista (puede ser string o lista ya convertida por psycopg2)
+        if isinstance(numeros_json, str):
+            numeros = json.loads(numeros_json)
+        else:
+            numeros = numeros_json
+
+        # Calcular total
+        total = precio_unitario * len(numeros)
+
+        # Formatear fecha para el PDF
+        fecha_str = fecha_hora.strftime("%d-%m-%Y %H:%M:%S")
+
+        conn.close()
+
+        # Generar PDF
+        pdf_buffer = generar_recibo_pdf(
+            num_recibo=num_recibo,
+            fecha_emision=fecha_str,
+            cliente=cliente,
+            numeros=numeros,
+            precio_unitario=precio_unitario,
+            total=total,
+            cierre=cierre,
+            vendedor=nombre_vendedor
+        )
+
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=recibo_{num_recibo}.pdf"}
+        )
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))

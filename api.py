@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -11,6 +11,7 @@ import os
 from datetime import timezone, timedelta
 import json
 import random
+import secrets  # Para generar tokens seguros
 
 # ===== CONFIGURACIÓN =====
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -119,23 +120,147 @@ def generar_recibo_pdf(num_recibo: int, fecha_emision: str, cliente: str, numero
 async def read_root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
+# ===== FUNCIÓN AUXILIAR PARA VALIDAR TOKEN =====
+async def validar_token(token: str):
+    """
+    Valida que el token exista, esté activo, no haya expirado,
+    y que el usuario esté activo y no haya expirado.
+    Retorna (id_usuario, nombre_usuario) si es válido.
+    """
+    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT 
+                s.id_usuario,
+                u.nombre_usuario,
+                s.fecha_expiracion,
+                u.fecha_expiracion AS usuario_expiracion,
+                u.activo AS usuario_activo
+            FROM sesiones_activas s
+            JOIN usuarios u ON s.id_usuario = u.id_usuario
+            WHERE s.token = %s AND s.activo = TRUE
+        """, (token,))
+        resultado = cursor.fetchone()
+        conn.close()
+
+        if not resultado:
+            raise HTTPException(status_code=401, detail="Token inválido o sesión cerrada")
+
+        id_usuario = resultado[0]
+        nombre_usuario = resultado[1]
+        fecha_expiracion_token = resultado[2]
+        fecha_expiracion_usuario = resultado[3]
+        usuario_activo = resultado[4]
+
+        ahora = datetime.now(timezone(timedelta(hours=-6)))
+
+        # Verificar expiración del token
+        if fecha_expiracion_token < ahora:
+            # Opcional: podríamos invalidar la sesión aquí
+            raise HTTPException(status_code=401, detail="Token expirado")
+
+        # Verificar que el usuario esté activo
+        if not usuario_activo:
+            raise HTTPException(status_code=401, detail="Usuario desactivado")
+
+        # Verificar que el usuario no haya expirado
+        if fecha_expiracion_usuario and fecha_expiracion_usuario < ahora:
+            raise HTTPException(status_code=401, detail="Licencia del usuario expirada")
+
+        return id_usuario, nombre_usuario
+
+    except Exception as e:
+        conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="Error validando token")
+
 # ===== API =====
 @app.post("/api/login")
 async def login(data: LoginRequest):
-    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id_usuario, nombre_usuario, limite_venta FROM usuarios WHERE nombre_usuario = %s AND password_hash = %s",
-        (data.usuario, data.password)
-    )
-    resultado = cursor.fetchone()
-    conn.close()
-    if not resultado:
-        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
-    return {"usuario": resultado[1], "limite_venta": resultado[2]}
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+
+        # 1. Validar credenciales y obtener datos del usuario
+        cursor.execute("""
+            SELECT id_usuario, nombre_usuario, limite_venta, fecha_expiracion, max_sesiones, activo
+            FROM usuarios 
+            WHERE nombre_usuario = %s AND password_hash = %s
+        """, (data.usuario, data.password))
+        resultado = cursor.fetchone()
+        if not resultado:
+            raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+
+        id_usuario = resultado[0]
+        nombre_usuario = resultado[1]
+        limite_venta = resultado[2]
+        fecha_expiracion = resultado[3]
+        max_sesiones = resultado[4]
+        activo = resultado[5]
+
+        # 2. Verificar que el usuario esté activo
+        if not activo:
+            raise HTTPException(status_code=401, detail="Usuario desactivado")
+
+        # 3. Verificar que la licencia no haya expirado
+        ahora = datetime.now(timezone(timedelta(hours=-6)))
+        if fecha_expiracion and fecha_expiracion < ahora:
+            raise HTTPException(status_code=401, detail="Licencia del usuario expirada")
+
+        # 4. Contar sesiones activas y verificar límite
+        cursor.execute("""
+            SELECT COUNT(*) FROM sesiones_activas 
+            WHERE id_usuario = %s AND activo = TRUE
+        """, (id_usuario,))
+        sesiones_activas = cursor.fetchone()[0]
+        if sesiones_activas >= max_sesiones:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Límite de sesiones alcanzado (máximo {max_sesiones}). Cierre otra sesión o contacte al administrador."
+            )
+
+        # 5. Generar token único
+        token = secrets.token_hex(32)  # 64 caracteres hexadecimales
+
+        # 6. Definir expiración del token (ej: 8 horas desde ahora)
+        expiracion_token = ahora + timedelta(hours=8)
+
+        # 7. Insertar la nueva sesión
+        cursor.execute("""
+            INSERT INTO sesiones_activas (id_usuario, token, fecha_expiracion)
+            VALUES (%s, %s, %s)
+        """, (id_usuario, token, expiracion_token))
+
+        conn.commit()
+        conn.close()
+
+        # 8. Devolver token y datos al frontend
+        return {
+            "usuario": nombre_usuario,
+            "limite_venta": limite_venta,
+            "token": token,
+            "expiracion": expiracion_token.isoformat()
+        }
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/opciones")
-async def get_opciones():
+async def get_opciones(authorization: str = Header(None)):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    _, _ = await validar_token(token)  # Solo validamos, no necesitamos el usuario aquí
+
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     cursor = conn.cursor()
     cursor.execute("SELECT nombre_opcion, numeros_incluidos FROM opciones_rapidas ORDER BY id_opcion")
@@ -144,7 +269,17 @@ async def get_opciones():
     return [{"nombre_opcion": f[0], "numeros_incluidos": f[1]} for f in filas]
 
 @app.post("/api/vender")
-async def vender(venta: VentaRequest):
+async def vender(venta: VentaRequest, authorization: str = Header(None)):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    id_usuario, nombre_vendedor = await validar_token(token)
+
+    # (Opcional: podrías usar el nombre_vendedor del token en lugar del que viene en el body)
+    # Forzamos a que el vendedor sea el del token para seguridad
+    venta.nombre_vendedor = nombre_vendedor
+
     conn = None
     try:
         # === VALIDACIÓN DE PRECIO NEGATIVO ===
@@ -152,28 +287,25 @@ async def vender(venta: VentaRequest):
             raise HTTPException(status_code=400, detail="El precio unitario debe ser mayor a 0")
 
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-        conn.autocommit = False  # Inicia la transacción
+        conn.autocommit = False
         cursor = conn.cursor()
 
-        # Zona horaria de Managua
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
         cierre = calcular_cierre(ahora.hour)
         total = venta.precio_unitario * len(venta.numeros)
 
-        # 1. Verificar vendedor y su límite
+        # 1. Obtener límite de venta del usuario (desde el token ya tenemos id_usuario)
         cursor.execute(
-            "SELECT id_usuario, limite_venta FROM usuarios WHERE nombre_usuario = %s",
-            (venta.nombre_vendedor,)
+            "SELECT limite_venta FROM usuarios WHERE id_usuario = %s",
+            (id_usuario,)
         )
         resultado = cursor.fetchone()
         if not resultado:
-            raise HTTPException(status_code=404, detail="Vendedor no encontrado")
-        id_usuario = resultado[0]
-        limite_venta = resultado[1]
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        limite_venta = resultado[0]
 
-        # Validar límite por número
         if limite_venta is not None and venta.precio_unitario > limite_venta:
             raise HTTPException(
                 status_code=400,
@@ -181,7 +313,7 @@ async def vender(venta: VentaRequest):
             )
 
         # 2. Generar numero de recibo de forma aleatoria y unica
-        num_recibo = int(f"{(int(ahora.timestamp() * 1000)% 10000000)}{random.randint(100, 999)}")
+        num_recibo = int(f"{(int(ahora.timestamp() * 1000) % 10000000)}{random.randint(100, 999)}")
 
         # 3. Convertir la lista de números a JSONB
         numeros_json = json.dumps(venta.numeros)
@@ -205,9 +337,8 @@ async def vender(venta: VentaRequest):
             ahora
         ))
 
-        conn.commit()  # Confirmar la transacción
+        conn.commit()
 
-        # Generar PDF
         fecha_str = ahora.strftime("%d-%m-%Y %H:%M:%S")
         pdf_buffer = generar_recibo_pdf(
             num_recibo=num_recibo,
@@ -228,21 +359,25 @@ async def vender(venta: VentaRequest):
 
     except Exception as e:
         if conn:
-            conn.rollback()  # Deshacer todo si algo falla
+            conn.rollback()
             conn.close()
-        # Si ya es una HTTPException, la relanzamos; si no, la envolvemos
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/recibo/{num_recibo}")
-async def obtener_recibo(num_recibo: int):
+async def obtener_recibo(num_recibo: int, authorization: str = Header(None)):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    _, _ = await validar_token(token)
+
     conn = None
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
 
-        # Ahora buscamos UN solo registro
         cursor.execute("""
             SELECT cliente, precio_unitario, numero_jugado
             FROM ventas
@@ -257,7 +392,6 @@ async def obtener_recibo(num_recibo: int):
         precio_unitario = resultado[1]
         numeros_json = resultado[2]
 
-        # Convertir JSONB de vuelta a lista de strings
         if isinstance(numeros_json, str):
             numeros = json.loads(numeros_json)
         else:
@@ -279,13 +413,18 @@ async def obtener_recibo(num_recibo: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/reimprimir/{num_recibo}")
-async def reimprimir_recibo(num_recibo: int):
+async def reimprimir_recibo(num_recibo: int, authorization: str = Header(None)):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    _, _ = await validar_token(token)
+
     conn = None
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
 
-        # Hacemos un JOIN con usuarios para obtener el nombre del vendedor
         cursor.execute("""
             SELECT 
                 v.cliente,
@@ -311,21 +450,16 @@ async def reimprimir_recibo(num_recibo: int):
         cierre = resultado[4]
         nombre_vendedor = resultado[5]
 
-        # Convertir JSON a lista (puede ser string o lista ya convertida por psycopg2)
         if isinstance(numeros_json, str):
             numeros = json.loads(numeros_json)
         else:
             numeros = numeros_json
 
-        # Calcular total
         total = precio_unitario * len(numeros)
-
-        # Formatear fecha para el PDF
         fecha_str = fecha_hora.strftime("%d-%m-%Y %H:%M:%S")
 
         conn.close()
 
-        # Generar PDF
         pdf_buffer = generar_recibo_pdf(
             num_recibo=num_recibo,
             fecha_emision=fecha_str,
