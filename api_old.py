@@ -349,3 +349,40 @@ async def reimprimir_recibo(num_recibo: int):
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/logout")
+async def logout(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+        
+        # Marcar la sesión como inactiva
+        cursor.execute("""
+            UPDATE sesiones_activas
+            SET activo = FALSE
+            WHERE token = %s AND activo = TRUE
+        """, (token,))
+        
+        # Si no se actualizó ninguna fila, el token no existía o ya estaba inactivo
+        if cursor.rowcount == 0:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Sesión no encontrada o ya cerrada")
+        
+        conn.commit()
+        conn.close()
+        
+        return {"detail": "Sesión cerrada exitosamente"}
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))    

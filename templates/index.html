@@ -119,8 +119,25 @@
             }
         }
 
-        function logout() {
-            // Limpiar localStorage
+        async function logout() {
+            const token = localStorage.getItem('loteria_token');
+            if (token) {
+                try {
+                    // Enviar petición al backend para cerrar la sesión
+                    await fetch(API + '/logout', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + token,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                } catch (error) {
+                    // Si falla la red, igual limpiamos localmente
+                    console.error('Error al cerrar sesión en el servidor:', error);
+                }
+            }
+
+            // Limpiar localStorage y variables
             localStorage.removeItem('loteria_token');
             localStorage.removeItem('loteria_usuario');
             currentUser = null;
