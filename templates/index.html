@@ -23,10 +23,14 @@
             justify-content: center;
             height: 55px;  /* Altura fija para que todos sean uniformes */
             line-height: 1.2;
+            background: #3b3b5c;   /* Fondo oscuro normal */
+            color: #ffffff;        /* Texto del número SIEMPRE blanco */            
         }
+        /* Cuando el número está SELECCIONADO: solo cambia el fondo */
         .num-btn.selected {
-            background: #00a86b;
-            color: black;
+            background: #00a86b;   /* Fondo verde elegante */
+            color: #ffffff;        /* El texto del número SIGUE siendo blanco */
+            box-shadow: 0 0 8px rgba(0, 168, 107, 0.5); /* Un brillo suave */
         }
         .num-btn.selected div {
             color: black !important;  /* El monto también se vuelve negro al seleccionar */
@@ -34,18 +38,24 @@
         .num-btn:hover {
             background: #4a4a6e;
         }
-                /* Asegurar que el monto sea visible y elegante */
+        .num-btn.selected:hover {
+            background: #009a5f;   /* Un verde un poco más oscuro al pasar el mouse */
+        }        
+        
+        /* El monto (texto dorado) siempre mantiene su color */
         .num-btn div:last-child {
             font-size: 9px;
-            color: #f0e68c;  /* Dorado claro */
+            color: #f0e68c;        /* Dorado claro */
             font-weight: bold;
-            text-shadow: 0 0 3px rgba(0,0,0,0.5);  /* Sombra suave para que resalte */
+            text-shadow: 0 0 3px rgba(0,0,0,0.5);
         }
-        /* Cuando el botón está seleccionado, el monto también se oscurece */
+
+        /* Cuando está seleccionado, el monto también mantiene su color dorado */
         .num-btn.selected div:last-child {
-            color: #333 !important;
-            text-shadow: none;
+            color: #f0e68c;        /* Se mantiene dorado */
+            text-shadow: 0 0 3px rgba(0,0,0,0.5);
         }
+        
         .opciones-rapidas { display: flex; flex-wrap: wrap; gap: 10px; margin: 15px 0; }
         .opcion-btn { flex: 1; min-width: 60px; padding: 10px; background: #ffaa00; color: black; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
         .opcion-btn:hover { background: #e69900; }
