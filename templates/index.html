@@ -34,6 +34,18 @@
         .num-btn:hover {
             background: #4a4a6e;
         }
+                /* Asegurar que el monto sea visible y elegante */
+        .num-btn div:last-child {
+            font-size: 9px;
+            color: #f0e68c;  /* Dorado claro */
+            font-weight: bold;
+            text-shadow: 0 0 3px rgba(0,0,0,0.5);  /* Sombra suave para que resalte */
+        }
+        /* Cuando el botón está seleccionado, el monto también se oscurece */
+        .num-btn.selected div:last-child {
+            color: #333 !important;
+            text-shadow: none;
+        }
         .opciones-rapidas { display: flex; flex-wrap: wrap; gap: 10px; margin: 15px 0; }
         .opcion-btn { flex: 1; min-width: 60px; padding: 10px; background: #ffaa00; color: black; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
         .opcion-btn:hover { background: #e69900; }
@@ -460,6 +472,9 @@
                 selectedNumbers = [];
                 document.getElementById('clienteInput').value = '';
                 document.getElementById('precioInput').value = '';
+                // === AGREGAR ESTA LÍNEA ===
+                actualizarMontosTablero();  // Actualizar los montos después de la venta
+
             } else {
                 if (res.status === 401) {
                     document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
@@ -469,8 +484,7 @@
                 const data = await res.json();
                 document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;            
             }
-            // === AGREGAR ESTA LÍNEA ===
-            actualizarMontosTablero();  // Actualizar los montos después de la venta
+
 
         }
 

@@ -539,16 +539,16 @@ async def tablero_estado(authorization: str = Header(None)):
         ahora = datetime.now(managua_tz)
         cierre_actual = calcular_cierre(ahora.hour)
 
-        # 2. Consulta SQL: Sumar los totales por número, solo del cierre actual
-        # Nota: Usamos jsonb_array_elements_text() para desglosar el JSONB
+        # 2. Consulta SQL CORREGIDA
+        # Desglosamos el JSONB, extraemos cada número como texto, y sumamos totales
         cursor.execute("""
             SELECT 
-                numero_jugado::text, 
-                SUM(total) as monto_total
+                num_individual AS numero,
+                SUM(total) AS monto_total
             FROM ventas,
-            LATERAL jsonb_array_elements_text(numero_jugado) AS numero_jugado
+            LATERAL jsonb_array_elements_text(numero_jugado) AS num_individual
             WHERE cierre_asignado = %s
-            GROUP BY numero_jugado
+            GROUP BY num_individual
         """, (cierre_actual,))
 
         filas = cursor.fetchall()
