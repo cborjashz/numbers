@@ -27,10 +27,9 @@
         .error { color: #ff5555; }
         .logout { background: #555; margin-top: 10px; }
         .logout:hover { background: #777; }
-        /* === CORRECCIÓN DE VISIBILIDAD PARA OPCIONES RÁPIDAS === */
         #opcionesContainer {
-            min-height: 40px;           /* Siempre tendrá al menos 40px de alto */
-            border: 1px dashed #ffaa00; /* Un borde amarillo para verlo aunque esté vacío */
+            min-height: 40px;
+            border: 1px dashed #ffaa00;
             padding: 5px;
             border-radius: 8px;
         }
@@ -87,6 +86,7 @@
     <script>
         // Variables de estado
         let currentUser = null;
+        let currentToken = null;
         let selectedNumbers = [];
 
         // URL de la API
@@ -97,12 +97,18 @@
             const user = document.getElementById('loginUser').value;
             const pass = document.getElementById('loginPass').value;
             const res = await fetch(API + '/login', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({usuario: user, password: pass})
             });
             const data = await res.json();
             if (res.ok) {
+                // Guardar datos en el navegador
                 currentUser = data.usuario;
+                currentToken = data.token;
+                localStorage.setItem('loteria_token', data.token);
+                localStorage.setItem('loteria_usuario', data.usuario);
+
                 document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
                 document.getElementById('loginBox').classList.remove('active');
                 document.getElementById('gameBox').classList.add('active');
@@ -113,8 +119,31 @@
             }
         }
 
-        function logout() {
-            currentUser = null; selectedNumbers = [];
+        async function logout() {
+            const token = localStorage.getItem('loteria_token');
+            if (token) {
+                try {
+                    // Enviar petición al backend para cerrar la sesión
+                    await fetch(API + '/logout', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + token,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                } catch (error) {
+                    // Si falla la red, igual limpiamos localmente
+                    console.error('Error al cerrar sesión en el servidor:', error);
+                }
+            }
+
+            // Limpiar localStorage y variables
+            localStorage.removeItem('loteria_token');
+            localStorage.removeItem('loteria_usuario');
+            currentUser = null;
+            currentToken = null;
+            selectedNumbers = [];
+            
             document.getElementById('gameBox').classList.remove('active');
             document.getElementById('loginBox').classList.add('active');
             document.getElementById('loginMsg').innerText = '';
@@ -144,9 +173,25 @@
                 return;
             }
     
+            const token = localStorage.getItem('loteria_token');
+            if (!token) {
+                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
+                logout();
+                return;
+            }
+
             try {
-                const res = await fetch(API + '/recibo/' + numRecibo);
+                const res = await fetch(API + '/recibo/' + numRecibo, {
+                    headers: {
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
                 if (!res.ok) {
+                    if (res.status === 401) {
+                        document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
+                        logout();
+                        return;
+                    }
                     const data = await res.json();
                     document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
                     return;
@@ -154,15 +199,12 @@
         
                 const data = await res.json();
         
-                // 1. Llenar campos de cliente y precio
                 document.getElementById('clienteInput').value = data.cliente;
                 document.getElementById('precioInput').value = data.precio_unitario;
         
-                // 2. Limpiar selección previa
                 document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
                 selectedNumbers = [];
         
-                // 3. Marcar los números del recibo (ahora data.numeros es un array directo)
                 data.numeros.forEach(num => {
                     const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
                     if (btn) {
@@ -185,15 +227,30 @@
                 return;
             }
 
+            const token = localStorage.getItem('loteria_token');
+            if (!token) {
+                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
+                logout();
+                return;
+            }
+
             try {
-                const res = await fetch(API + '/reimprimir/' + numRecibo);
+                const res = await fetch(API + '/reimprimir/' + numRecibo, {
+                    headers: {
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
                 if (!res.ok) {
+                    if (res.status === 401) {
+                        document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
+                        logout();
+                        return;
+                    }
                     const data = await res.json();
                     document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
                     return;
                 }
 
-                // Descargar el PDF automáticamente (igual que en la venta)
                 const blob = await res.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -207,7 +264,7 @@
                 document.getElementById('resultMsg').innerHTML = `<span class="success">✅ Recibo ${numRecibo} reimpreso exitosamente!</span>`;
 
             } catch (error) {
-             document.getElementById('resultMsg').innerHTML = `<span class="error">❌ Error de conexión al reimprimir</span>`;
+                document.getElementById('resultMsg').innerHTML = `<span class="error">❌ Error de conexión al reimprimir</span>`;
             }
         }        
 
@@ -222,11 +279,32 @@
             }
         }
 
-        // Cargar opciones rápidas desde la base de datos
         async function cargarOpciones() {
             const container = document.getElementById('opcionesContainer');
             container.innerHTML = '';
-            const res = await fetch(API + '/opciones');
+
+            const token = localStorage.getItem('loteria_token');
+            if (!token) {
+                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
+                logout();
+                return;
+            }
+
+            const res = await fetch(API + '/opciones', {
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                }
+            });
+            
+            if (!res.ok) {
+                if (res.status === 401) {
+                    document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
+                    logout();
+                    return;
+                }
+                return;
+            }
+
             const opciones = await res.json();
             
             if (opciones.length === 0) {
@@ -244,19 +322,14 @@
         }
 
         function limpiarSeleccion() {
-            // Desmarcar todos los botones
             document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
-            // Vaciar la lista de seleccionados
             selectedNumbers = [];
-            // Limpiar el mensaje de resultado
             document.getElementById('resultMsg').innerHTML = '';
         }
 
         function seleccionarOpcion(numerosStr) {
-            // Limpiar selección previa
             document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
             selectedNumbers = [];
-            // Dividir la cadena y seleccionar
             const nums = numerosStr.split(',');
             nums.forEach(n => {
                 const btn = document.querySelector(`.num-btn[data-num="${n}"]`);
@@ -264,13 +337,10 @@
             });
         }
 
-        // Vender
-        // Vender
         async function vender() {
             const cliente = document.getElementById('clienteInput').value;
             const precio = document.getElementById('precioInput').value;
 
-            // VALIDACIÓN DE PRECIO NEGATIVO EN EL FRONTEND
             if (parseFloat(precio) <= 0) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ El precio debe ser mayor a 0</span>';
                 return;
@@ -283,11 +353,20 @@
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Seleccione al menos un número</span>';
                 return;
             }
+
+            const token = localStorage.getItem('loteria_token');
+            if (!token) {
+                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
+                logout();
+                return;
+            }
             
-            // Enviar la solicitud esperando un PDF
             const res = await fetch(API + '/vender', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
                 body: JSON.stringify({
                     nombre_vendedor: currentUser,
                     cliente: cliente,
@@ -297,7 +376,6 @@
             });
             
             if (res.ok) {
-                // Descargar el PDF automáticamente
                 const blob = await res.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -308,19 +386,37 @@
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
                 
-                // Mensaje en pantalla
                 document.getElementById('resultMsg').innerHTML = '<span class="success">✅ Venta exitosa! El recibo se ha descargado.</span>';
                 
-                // Limpiar selección
                 document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
                 selectedNumbers = [];
                 document.getElementById('clienteInput').value = '';
                 document.getElementById('precioInput').value = '';
             } else {
+                if (res.status === 401) {
+                    document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
+                    logout();
+                    return;
+                }
                 const data = await res.json();
                 document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
             }
         }
+
+        // Verificar si ya hay una sesión guardada al cargar la página
+        window.onload = function() {
+            const savedToken = localStorage.getItem('loteria_token');
+            const savedUser = localStorage.getItem('loteria_usuario');
+            if (savedToken && savedUser) {
+                currentToken = savedToken;
+                currentUser = savedUser;
+                document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
+                document.getElementById('loginBox').classList.remove('active');
+                document.getElementById('gameBox').classList.add('active');
+                cargarOpciones();
+                generarTablero();
+            }
+        };
     </script>
 </body>
 </html>

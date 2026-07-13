@@ -520,3 +520,50 @@ async def logout(authorization: str = Header(None)):
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/tablero-estado")
+async def tablero_estado(authorization: str = Header(None)):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    _, _ = await validar_token(token)
+
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+
+        # 1. Obtener la hora actual y calcular el cierre
+        managua_tz = timezone(timedelta(hours=-6))
+        ahora = datetime.now(managua_tz)
+        cierre_actual = calcular_cierre(ahora.hour)
+
+        # 2. Consulta SQL: Sumar los totales por número, solo del cierre actual
+        # Nota: Usamos jsonb_array_elements_text() para desglosar el JSONB
+        cursor.execute("""
+            SELECT 
+                numero_jugado::text, 
+                SUM(total) as monto_total
+            FROM ventas,
+            LATERAL jsonb_array_elements_text(numero_jugado) AS numero_jugado
+            WHERE cierre_asignado = %s
+            GROUP BY numero_jugado
+        """, (cierre_actual,))
+
+        filas = cursor.fetchall()
+        conn.close()
+
+        # 3. Convertir a diccionario: {"00": 350.0, "05": 1200.0, ...}
+        resultado = {}
+        for num, monto in filas:
+            resultado[num] = float(monto)
+
+        return resultado
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))

@@ -14,9 +14,26 @@
         button { width: 100%; padding: 15px; margin-top: 15px; border: none; border-radius: 8px; background: #00a86b; color: white; font-size: 18px; font-weight: bold; cursor: pointer; }
         button:hover { background: #008f5a; }
         .grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; margin: 20px 0; }
-        .num-btn { padding: 10px 0; background: #3b3b5c; border: none; border-radius: 5px; color: white; font-size: 14px; cursor: pointer; }
-        .num-btn.selected { background: #00a86b; color: black; font-weight: bold; }
-        .num-btn:hover { background: #4a4a6e; }
+        /* Estilos para que el botón tenga el número grande y el monto pequeño debajo */
+        .num-btn {
+            padding: 8px 0 4px 0;  /* Ajustamos padding para que quepa el monto */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 55px;  /* Altura fija para que todos sean uniformes */
+            line-height: 1.2;
+        }
+        .num-btn.selected {
+            background: #00a86b;
+            color: black;
+        }
+        .num-btn.selected div {
+            color: black !important;  /* El monto también se vuelve negro al seleccionar */
+        }
+        .num-btn:hover {
+            background: #4a4a6e;
+        }
         .opciones-rapidas { display: flex; flex-wrap: wrap; gap: 10px; margin: 15px 0; }
         .opcion-btn { flex: 1; min-width: 60px; padding: 10px; background: #ffaa00; color: black; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
         .opcion-btn:hover { background: #e69900; }
@@ -159,10 +176,61 @@
                 const num = i.toString().padStart(2, '0');
                 const btn = document.createElement('button');
                 btn.className = 'num-btn';
-                btn.innerText = num;
+                btn.id = `btn-${num}`;  // Agregamos un ID para identificarlo fácilmente
+                
+                // Estructura interna: número grande + espacio para el monto
+                btn.innerHTML = `
+                    <div style="font-size: 16px; font-weight: bold;">${num}</div>
+                    <div id="monto-${num}" style="font-size: 10px; color: #ffd700; margin-top: 2px; font-weight: normal;"></div>
+                `;
+                
                 btn.dataset.num = num;
                 btn.onclick = () => toggleNumber(num, btn);
                 grid.appendChild(btn);
+            }
+            // Después de generar el tablero, cargamos los montos
+            actualizarMontosTablero();
+        }
+
+        async function actualizarMontosTablero() {
+            const token = localStorage.getItem('loteria_token');
+            if (!token) return; // Si no hay token, no hacemos nada
+
+            try {
+                const res = await fetch(API + '/tablero-estado', {
+                    headers: {
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        // Si el token expiró, cerramos sesión
+                        logout();
+                        return;
+                    }
+                    return; // Si hay otro error, simplemente no actualizamos
+                }
+
+                const datos = await res.json(); // Ej: {"00": 350.0, "05": 1200.0}
+
+                // Recorrer todos los botones (00 al 99) y actualizar el monto
+                for (let i = 0; i < 100; i++) {
+                    const num = i.toString().padStart(2, '0');
+                    const montoDiv = document.getElementById(`monto-${num}`);
+                    if (montoDiv) {
+                        const monto = datos[num];
+                        if (monto && monto > 0) {
+                            // Formatear con separador de miles y 2 decimales
+                            montoDiv.innerText = `L. ${monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                            montoDiv.style.color = '#ffd700'; // Dorado
+                        } else {
+                            montoDiv.innerText = '';
+                            montoDiv.style.color = '#ffd700';
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error al actualizar montos del tablero:', error);
             }
         }
 
@@ -399,8 +467,11 @@
                     return;
                 }
                 const data = await res.json();
-                document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
+                document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;            
             }
+            // === AGREGAR ESTA LÍNEA ===
+            actualizarMontosTablero();  // Actualizar los montos después de la venta
+
         }
 
         // Verificar si ya hay una sesión guardada al cargar la página
