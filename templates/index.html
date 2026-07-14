@@ -292,12 +292,10 @@
                 document.getElementById('clienteInput').value = data.cliente;
                 document.getElementById('precioInput').value = data.precio_unitario;
         
-                document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
-                selectedNumbers = [];
-        
+                // NO limpiar la selección previa. Solo agregar los números del recibo.
                 data.numeros.forEach(num => {
                     const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
-                    if (btn) {
+                    if (btn && !btn.classList.contains('selected')) {
                         btn.classList.add('selected');
                         selectedNumbers.push(num);
                     }
@@ -418,12 +416,14 @@
         }
 
         function seleccionarOpcion(numerosStr) {
-            document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
-            selectedNumbers = [];
+            // NO limpiar la selección previa. Solo agregar los nuevos números.
             const nums = numerosStr.split(',');
             nums.forEach(n => {
                 const btn = document.querySelector(`.num-btn[data-num="${n}"]`);
-                if (btn) { btn.classList.add('selected'); selectedNumbers.push(n); }
+                if (btn && !btn.classList.contains('selected')) {
+                    btn.classList.add('selected');
+                    selectedNumbers.push(n);
+                }
             });
         }
 

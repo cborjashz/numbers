@@ -557,7 +557,7 @@ async def tablero_estado(authorization: str = Header(None)):
         cursor.execute("""
             SELECT 
                 num_individual AS numero,
-                SUM(v.total) AS monto_total
+                SUM(v.precio_unitario) AS monto_total
             FROM ventas v,
             LATERAL jsonb_array_elements_text(v.numero_jugado) AS num_individual
             WHERE v.cierre_asignado = %s
