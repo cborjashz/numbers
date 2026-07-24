@@ -626,3 +626,81 @@ async def tablero_estado(authorization: str = Header(None)):
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/reporte-ventas-cliente")
+async def reporte_ventas_cliente(
+    authorization: str = Header(None),
+    fecha_inicio: str = None,
+    fecha_fin: str = None
+):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    id_usuario, _ = await validar_token(token)
+
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
+
+        # 1. Obtener id_mayorista del usuario
+        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] is None:
+            conn.close()
+            return []
+
+        id_mayorista = resultado[0]
+
+        # 2. Determinar rango de fechas
+        managua_tz = timezone(timedelta(hours=-6))
+        hoy = datetime.now(managua_tz).date()
+
+        if fecha_inicio:
+            fecha_inicio_dt = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+        else:
+            fecha_inicio_dt = hoy
+
+        if fecha_fin:
+            fecha_fin_dt = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+        else:
+            fecha_fin_dt = hoy
+
+        # 3. Consulta SQL: Agrupar por cliente y cierre
+        cursor.execute("""
+            SELECT 
+                cliente,
+                cierre_asignado,
+                SUM(cantidad) AS total_numeros,
+                SUM(total) AS total_monto
+            FROM ventas
+            WHERE id_mayorista = %s
+              AND id_usuario = %s
+              AND DATE(fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
+            GROUP BY cliente, cierre_asignado
+            ORDER BY cliente, cierre_asignado
+        """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
+
+        filas = cursor.fetchall()
+        conn.close()
+
+        # 4. Formatear respuesta
+        resultado = []
+        for cliente, cierre, total_numeros, total_monto in filas:
+            resultado.append({
+                "cliente": cliente,
+                "cierre": cierre,
+                "total_numeros": int(total_numeros),
+                "total_monto": float(total_monto)
+            })
+
+        return resultado
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))

@@ -92,6 +92,10 @@
             <div style="display:flex; justify-content:space-between;">
                 <span id="userDisplay" style="font-weight:bold;"></span>
                 <button class="logout" onclick="logout()" style="width:auto; padding:5px 15px;">Salir</button>
+                <!-- Botón para abrir reporte -->
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                    <button onclick="abrirReporte()" style="width: auto; padding: 8px 15px; background: #f39c12; color: black; font-size: 14px; border-radius: 8px;">📊 Reporte por Cliente</button>
+                </div>
             </div>
 
             <!-- Cargar recibo de referencia -->
@@ -117,7 +121,8 @@
                 <input type="text" id="clienteInput" placeholder="Cliente">
                 <input type="number" id="precioInput" placeholder="Precio L." step="0.01">
             </div>
-                        <!-- Selector de cierre -->
+
+            <!-- Selector de cierre -->
             <div style="display: flex; gap: 10px; margin: 10px 0; align-items: center;">
                 <label for="cierreSelect" style="font-size: 14px; font-weight: bold;">Cierre:</label>
                 <select id="cierreSelect" style="width: auto; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
@@ -511,6 +516,84 @@
 
         }
 
+        function abrirReporte() {
+            document.getElementById('reporteModal').style.display = 'flex';
+            // Establecer fechas por defecto (hoy)
+            const hoy = new Date().toISOString().split('T')[0];
+            document.getElementById('reporteFechaInicio').value = hoy;
+            document.getElementById('reporteFechaFin').value = hoy;
+            cargarReporte();
+        }
+
+        function cerrarReporte() {
+            document.getElementById('reporteModal').style.display = 'none';
+        }
+
+        async function cargarReporte() {
+            const fechaInicio = document.getElementById('reporteFechaInicio').value;
+            const fechaFin = document.getElementById('reporteFechaFin').value;
+
+            if (!fechaInicio || !fechaFin) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Seleccione ambas fechas</td></tr>';
+                return;
+            }
+
+            const token = localStorage.getItem('loteria_token');
+            if (!token) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API}/reporte-ventas-cliente?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
+                        return;
+                    }
+                    const data = await res.json();
+                    document.getElementById('reporteTableBody').innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ ${data.detail}</td></tr>`;
+                    return;
+                }
+
+                const datos = await res.json();
+
+                if (datos.length === 0) {
+                    document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #aaa;">No hay ventas en el rango seleccionado</td></tr>';
+                    return;
+                }
+
+                let html = '';
+                let totalGeneral = 0;
+                datos.forEach(item => {
+                    totalGeneral += item.total_monto;
+                    html += `
+                        <tr style="border-bottom: 1px solid #3b3b5c;">
+                            <td style="padding: 8px;">${item.cliente}</td>
+                            <td style="padding: 8px;">${item.cierre}</td>
+                            <td style="padding: 8px; text-align: center;">${item.total_numeros}</td>
+                            <td style="padding: 8px; text-align: right;">L. ${item.total_monto.toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                    <tr style="background: #00a86b; font-weight: bold;">
+                        <td colspan="3" style="padding: 8px; text-align: right;">TOTAL GENERAL</td>
+                        <td style="padding: 8px; text-align: right;">L. ${totalGeneral.toFixed(2)}</td>
+                    </tr>
+                `;
+
+                document.getElementById('reporteTableBody').innerHTML = html;
+
+            } catch (error) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Error de conexión</td></tr>';
+            }
+        }        
+
         // Verificar si ya hay una sesión guardada al cargar la página
         window.onload = function() {
             const savedToken = localStorage.getItem('loteria_token');
@@ -525,6 +608,36 @@
                 generarTablero();
             }
         };
+
     </script>
+    <!-- MODAL DE REPORTE -->
+    <div id="reporteModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: #2d2d44; padding: 20px; border-radius: 15px; width: 90%; max-width: 700px; max-height: 80vh; overflow-y: auto; color: white;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                <h2 style="margin: 0;">📊 Reporte de Ventas por Cliente</h2>
+                <button onclick="cerrarReporte()" style="background: #d32f2f; color: white; border: none; border-radius: 5px; padding: 5px 15px; cursor: pointer;">✕ Cerrar</button>
+            </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <input type="date" id="reporteFechaInicio" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
+                <input type="date" id="reporteFechaFin" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
+                <button onclick="cargarReporte()" style="width: auto; padding: 8px 15px; background: #00a86b; color: white; border: none; border-radius: 5px;">🔍 Cargar</button>
+            </div>
+            <div id="reporteResultado" style="max-height: 400px; overflow-y: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                    <thead style="background: #3b3b5c; position: sticky; top: 0;">
+                        <tr>
+                            <th style="padding: 8px; text-align: left;">Cliente</th>
+                            <th style="padding: 8px; text-align: left;">Cierre</th>
+                            <th style="padding: 8px; text-align: center;">Números</th>
+                            <th style="padding: 8px; text-align: right;">Total L.</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reporteTableBody">
+                        <tr><td colspan="4" style="text-align: center; padding: 20px; color: #aaa;">Seleccione fechas y presione "Cargar"</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
