@@ -306,10 +306,35 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
             cierres_validos = ["Cierre 1 (11am)", "Cierre 2 (3pm)", "Cierre 3 (9pm)"]
             if venta.cierre_elegido not in cierres_validos:
                 raise HTTPException(status_code=400, detail="Cierre elegido no válido")
+
+            # --- VALIDACIÓN DE NO PERMITIR CIERRES YA PASADOS ---
+            # Mapeamos cada cierre a su hora límite (hora en que empieza el siguiente)
+            # Si son las 11:00 AM, ya no se puede elegir "Cierre 1"
+            # Si son las 3:00 PM, ya no se puede elegir "Cierre 2"
+            # Si son las 9:00 PM, ya no se puede elegir "Cierre 3"
+            hora_actual = ahora.hour
+
+            if venta.cierre_elegido == "Cierre 1 (11am)" and hora_actual >= 11:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="El Cierre 1 (11am) ya pasó. Elija el cierre actual o uno futuro."
+                )
+            elif venta.cierre_elegido == "Cierre 2 (3pm)" and hora_actual >= 15:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="El Cierre 2 (3pm) ya pasó. Elija el cierre actual o uno futuro."
+                )
+            elif venta.cierre_elegido == "Cierre 3 (9pm)" and hora_actual >= 21:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="El Cierre 3 (9pm) ya pasó. Elija el cierre actual o uno futuro."
+                )
+            # ------------------------------------------------
+
             cierre = venta.cierre_elegido
         else:
             cierre = calcular_cierre(ahora.hour)
-            
+
         total = venta.precio_unitario * len(venta.numeros)
 
         # 1. Obtener límite de venta Y EL MAYORISTA del usuario
