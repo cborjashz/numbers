@@ -592,7 +592,53 @@
             } catch (error) {
                 document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Error de conexión</td></tr>';
             }
-        }        
+        }
+        
+        async function descargarReportePDF() {
+            const fechaInicio = document.getElementById('reporteFechaInicio').value;
+            const fechaFin = document.getElementById('reporteFechaFin').value;
+
+            if (!fechaInicio || !fechaFin) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Seleccione ambas fechas</td></tr>';
+                return;
+            }
+
+            const token = localStorage.getItem('loteria_token');
+            if (!token) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API}/reporte-ventas-cliente-pdf?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
+                        return;
+                    }
+                    const data = await res.json();
+                    document.getElementById('reporteTableBody').innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ ${data.detail}</td></tr>`;
+                    return;
+                }
+
+                // Descargar el PDF
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `reporte_ventas_${fechaInicio}_a_${fechaFin}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+            } catch (error) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Error de conexión</td></tr>';
+            }
+        }                
 
         // Verificar si ya hay una sesión guardada al cargar la página
         window.onload = function() {
@@ -621,6 +667,7 @@
                 <input type="date" id="reporteFechaInicio" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
                 <input type="date" id="reporteFechaFin" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
                 <button onclick="cargarReporte()" style="width: auto; padding: 8px 15px; background: #00a86b; color: white; border: none; border-radius: 5px;">🔍 Cargar</button>
+                <button onclick="descargarReportePDF()" style="width: auto; padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 5px;">📄 Descargar PDF</button>
             </div>
             <div id="reporteResultado" style="max-height: 400px; overflow-y: auto;">
                 <table style="width: 100%; border-collapse: collapse; font-size: 14px;">

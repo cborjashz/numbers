@@ -704,3 +704,126 @@ async def reporte_ventas_cliente(
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/reporte-ventas-cliente-pdf")
+async def reporte_ventas_cliente_pdf(
+    authorization: str = Header(None),
+    fecha_inicio: str = None,
+    fecha_fin: str = None
+):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    id_usuario, _ = await validar_token(token)
+
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
+
+        # 1. Obtener id_mayorista del usuario
+        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] is None:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Usuario sin mayorista")
+
+        id_mayorista = resultado[0]
+
+        # 2. Determinar rango de fechas
+        managua_tz = timezone(timedelta(hours=-6))
+        hoy = datetime.now(managua_tz).date()
+
+        if fecha_inicio:
+            fecha_inicio_dt = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+        else:
+            fecha_inicio_dt = hoy
+
+        if fecha_fin:
+            fecha_fin_dt = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+        else:
+            fecha_fin_dt = hoy
+
+        # 3. Consulta SQL: Agrupar por cliente y cierre
+        cursor.execute("""
+            SELECT 
+                cliente,
+                cierre_asignado,
+                SUM(cantidad) AS total_numeros,
+                SUM(total) AS total_monto
+            FROM ventas
+            WHERE id_mayorista = %s
+              AND id_usuario = %s
+              AND DATE(fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
+            GROUP BY cliente, cierre_asignado
+            ORDER BY cliente, cierre_asignado
+        """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
+
+        filas = cursor.fetchall()
+        conn.close()
+
+        # 4. Generar PDF
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+
+        # Título
+        c.setFont("Helvetica-Bold", 18)
+        c.drawCentredString(width / 2, height - 50, "Reporte de Ventas por Cliente")
+
+        # Fechas
+        c.setFont("Helvetica", 12)
+        c.drawString(50, height - 80, f"Desde: {fecha_inicio_dt.strftime('%d/%m/%Y')}")
+        c.drawString(250, height - 80, f"Hasta: {fecha_fin_dt.strftime('%d/%m/%Y')}")
+
+        # Encabezados de tabla
+        y = height - 120
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, y, "Cliente")
+        c.drawString(200, y, "Cierre")
+        c.drawString(350, y, "Números")
+        c.drawString(450, y, "Total L.")
+        c.line(50, y - 5, 550, y - 5)
+
+        # Datos
+        y -= 25
+        c.setFont("Helvetica", 11)
+        total_general = 0
+
+        for cliente, cierre, total_numeros, total_monto in filas:
+            if y < 50:  # Salto de página si no hay espacio
+                c.showPage()
+                y = height - 50
+                c.setFont("Helvetica", 11)
+
+            c.drawString(50, y, cliente[:30])  # Truncar si es muy largo
+            c.drawString(200, y, cierre)
+            c.drawString(350, y, str(total_numeros))
+            c.drawString(450, y, f"{total_monto:.2f}")
+            total_general += total_monto
+            y -= 20
+
+        # Total general
+        y -= 10
+        c.setFont("Helvetica-Bold", 12)
+        c.line(50, y - 5, 550, y - 5)
+        c.drawString(350, y, "TOTAL GENERAL")
+        c.drawString(450, y, f"{total_general:.2f}")
+
+        c.save()
+        buffer.seek(0)
+
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=reporte_ventas_{fecha_inicio_dt.strftime('%Y%m%d')}_a_{fecha_fin_dt.strftime('%Y%m%d')}.pdf"}
+        )
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
