@@ -129,6 +129,7 @@ async def validar_token(token: str):
     """
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     cursor = conn.cursor()
+    cursor.execute("SET TIMEZONE = 'America/Managua'")
     try:
         cursor.execute("""
             SELECT 
@@ -183,6 +184,7 @@ async def login(data: LoginRequest):
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
 
         # 1. Validar credenciales y obtener datos del usuario (INCLUIMOS id_mayorista)
         cursor.execute("""
@@ -265,6 +267,7 @@ async def get_opciones(authorization: str = Header(None)):
 
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     cursor = conn.cursor()
+    cursor.execute("SET TIMEZONE = 'America/Managua'")
     cursor.execute("SELECT nombre_opcion, numeros_incluidos FROM opciones_rapidas ORDER BY id_opcion")
     filas = cursor.fetchall()
     conn.close()
@@ -291,6 +294,7 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         conn.autocommit = False
         cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
 
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
@@ -382,6 +386,7 @@ async def obtener_recibo(num_recibo: int, authorization: str = Header(None)):
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
 
         cursor.execute("""
             SELECT cliente, precio_unitario, numero_jugado
@@ -429,6 +434,7 @@ async def reimprimir_recibo(num_recibo: int, authorization: str = Header(None)):
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
 
         cursor.execute("""
             SELECT 
@@ -500,6 +506,7 @@ async def logout(authorization: str = Header(None)):
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
         
         # Marcar la sesión como inactiva
         cursor.execute("""
@@ -538,13 +545,14 @@ async def tablero_estado(authorization: str = Header(None)):
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
 
         # 1. Obtener el id_mayorista del usuario logueado
         cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
         resultado = cursor.fetchone()
         if not resultado or resultado[0] is None:
             conn.close()
-            return {}  # Si no tiene mayorista, no mostramos nada
+            return {}
 
         id_mayorista = resultado[0]
 
@@ -552,8 +560,9 @@ async def tablero_estado(authorization: str = Header(None)):
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
         cierre_actual = calcular_cierre(ahora.hour)
+        fecha_actual = ahora.date()
 
-        # 3. Consulta SQL: Sumar los totales por número, solo del cierre actual Y DEL MAYORISTA
+        # 3. Consulta SQL CORREGIDA: filtra por fecha, cierre, mayorista Y VENDEDOR
         cursor.execute("""
             SELECT 
                 num_individual AS numero,
@@ -562,13 +571,14 @@ async def tablero_estado(authorization: str = Header(None)):
             LATERAL jsonb_array_elements_text(v.numero_jugado) AS num_individual
             WHERE v.cierre_asignado = %s
               AND v.id_mayorista = %s
+              AND v.id_usuario = %s
+              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
             GROUP BY num_individual
-        """, (cierre_actual, id_mayorista))
+        """, (cierre_actual, id_mayorista, id_usuario, fecha_actual))
 
         filas = cursor.fetchall()
         conn.close()
 
-        # 4. Convertir a diccionario: {"00": 350.0, "05": 1200.0, ...}
         resultado = {}
         for num, monto in filas:
             resultado[num] = float(monto)
