@@ -117,6 +117,17 @@
                 <input type="text" id="clienteInput" placeholder="Cliente">
                 <input type="number" id="precioInput" placeholder="Precio L." step="0.01">
             </div>
+                        <!-- Selector de cierre -->
+            <div style="display: flex; gap: 10px; margin: 10px 0; align-items: center;">
+                <label for="cierreSelect" style="font-size: 14px; font-weight: bold;">Cierre:</label>
+                <select id="cierreSelect" style="width: auto; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
+                    <option value="">Automático (según hora)</option>
+                    <option value="Cierre 1 (11am)">Cierre 1 (11am)</option>
+                    <option value="Cierre 2 (3pm)">Cierre 2 (3pm)</option>
+                    <option value="Cierre 3 (9pm)">Cierre 3 (9pm)</option>
+                </select>
+            </div>
+
             <button onclick="vender()">🟢 VENDER</button>
             <div id="resultMsg" class="message"></div>
         </div>
@@ -430,6 +441,7 @@
         async function vender() {
             const cliente = document.getElementById('clienteInput').value;
             const precio = document.getElementById('precioInput').value;
+            const cierreElegido = document.getElementById('cierreSelect').value;
 
             if (parseFloat(precio) <= 0) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ El precio debe ser mayor a 0</span>';
@@ -461,7 +473,8 @@
                     nombre_vendedor: currentUser,
                     cliente: cliente,
                     numeros: selectedNumbers,
-                    precio_unitario: parseFloat(precio)
+                    precio_unitario: parseFloat(precio),
+                    cierre_elegido: cierreElegido || null 
                 })
             });
             

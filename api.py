@@ -29,6 +29,7 @@ class VentaRequest(BaseModel):
     cliente: str
     numeros: list[str]
     precio_unitario: float
+    cierre_elegido: str | None = None
 
 # ===== LÓGICA DE CIERRES =====
 def calcular_cierre(hora_venta: int) -> str:
@@ -299,7 +300,16 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
-        cierre = calcular_cierre(ahora.hour)
+        # 2. Determinar el cierre (elegido por el usuario o automático)
+        if venta.cierre_elegido:
+            # Validar que el cierre elegido sea uno de los válidos
+            cierres_validos = ["Cierre 1 (11am)", "Cierre 2 (3pm)", "Cierre 3 (9pm)"]
+            if venta.cierre_elegido not in cierres_validos:
+                raise HTTPException(status_code=400, detail="Cierre elegido no válido")
+            cierre = venta.cierre_elegido
+        else:
+            cierre = calcular_cierre(ahora.hour)
+            
         total = venta.precio_unitario * len(venta.numeros)
 
         # 1. Obtener límite de venta Y EL MAYORISTA del usuario
