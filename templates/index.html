@@ -105,8 +105,13 @@
                 <button onclick="reimprimirRecibo()" style="width: auto; padding: 10px 15px; background: #2196f3; color: white;" title="Reimprimir recibo">🖨️</button>
             </div>
 
-            <!-- Opciones rápidas (cargadas desde la BD) -->
-            <div class="opciones-rapidas" id="opcionesContainer"></div>
+            <!-- Opciones rápidas (combobox) -->
+            <div style="display: flex; gap: 10px; margin: 15px 0; align-items: center;">
+                <label for="opcionesSelect" style="font-size: 14px; font-weight: bold;">Opción rápida:</label>
+                <select id="opcionesSelect" style="flex: 1; padding: 10px; background: #3b3b5c; color: white; border: none; border-radius: 8px; font-size: 14px;">
+                    <option value="">-- Seleccione una opción --</option>
+                </select>
+            </div>
 
             <!-- Botón para limpiar selección -->
             <div style="display: flex; justify-content: center; margin: 5px 0 15px 0;">
@@ -384,8 +389,11 @@
         }
 
         async function cargarOpciones() {
-            const container = document.getElementById('opcionesContainer');
-            container.innerHTML = '';
+            const select = document.getElementById('opcionesSelect');
+            // Limpiar opciones previas (pero mantener la primera)
+            while (select.options.length > 1) {
+                select.remove(1);
+            }
 
             const token = localStorage.getItem('loteria_token');
             if (!token) {
@@ -412,16 +420,20 @@
             const opciones = await res.json();
             
             if (opciones.length === 0) {
-                container.innerHTML = '<div style="color:#aaa; font-size:14px; text-align:center; width:100%;">No hay opciones rápidas configuradas</div>';
+                // Si no hay opciones, agregamos una opción informativa
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'No hay opciones rápidas configuradas';
+                opt.disabled = true;
+                select.appendChild(opt);
                 return;
             }
             
             opciones.forEach(op => {
-                const btn = document.createElement('button');
-                btn.className = 'opcion-btn';
-                btn.innerText = op.nombre_opcion;
-                btn.onclick = () => seleccionarOpcion(op.numeros_incluidos);
-                container.appendChild(btn);
+                const opt = document.createElement('option');
+                opt.value = op.numeros_incluidos;
+                opt.textContent = op.nombre_opcion;
+                select.appendChild(opt);
             });
         }
 
@@ -432,6 +444,8 @@
         }
 
         function seleccionarOpcion(numerosStr) {
+            if (!numerosStr) return; // Si no hay valor, no hacer nada
+
             // NO limpiar la selección previa. Solo agregar los nuevos números.
             const nums = numerosStr.split(',');
             nums.forEach(n => {
