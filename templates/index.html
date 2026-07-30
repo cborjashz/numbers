@@ -435,6 +435,14 @@
                 opt.textContent = op.nombre_opcion;
                 select.appendChild(opt);
             });
+
+            // Agregar evento para cuando el usuario seleccione una opción
+            select.onchange = function() {
+                seleccionarOpcion(this.value);
+                // Opcional: resetear el combobox después de seleccionar (para poder elegir otra)
+                // this.value = '';
+            };
+
         }
 
         function limpiarSeleccion() {
