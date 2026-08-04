@@ -455,20 +455,37 @@
                 return;
             }
 
+            // Caso 1: Es una opción rápida (hay números pendientes en pendingQuickNumbers)
+            if (pendingQuickNumbers && pendingQuickNumbers.length > 0) {
+                pendingQuickNumbers.forEach(num => {
+                    // Buscar el botón del número en el tablero
+                    const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
+                    if (btn && !btn.classList.contains('selected')) {
+                        btn.classList.add('selected');
+                        selectedNumbers.push(num);
+                        // Agregar a la tabla resumen
+                        agregarAResumen(num, precio);
+                    }
+                });
+                // Limpiar la variable temporal
+                pendingQuickNumbers = [];
+                cerrarModalPrecio();
+                actualizarMontosTablero();
+                return;
+            }
+
+            // Caso 2: Es un número individual (pendingNumber y pendingButton están definidos)
             if (pendingNumber && pendingButton) {
-                // Marcar como seleccionado
                 pendingButton.classList.add('selected');
                 selectedNumbers.push(pendingNumber);
-
-                // Agregar a la tabla resumen
                 agregarAResumen(pendingNumber, precio);
-
-                // Cerrar modal
                 cerrarModalPrecio();
-
-                // Actualizar montos del tablero (opcional)
                 actualizarMontosTablero();
+                return;
             }
+
+            // Si no hay ni pendingNumber ni pendingQuickNumbers, no hacer nada
+            alert('❌ No hay números seleccionados para asignar precio.');
         }
 
         function agregarAResumen(num, precio) {
@@ -590,18 +607,20 @@
             document.getElementById('resumenTotal').innerText = 'L. 0.00';
         }
 
+        // Variable temporal para guardar los números de la opción rápida
+        let pendingQuickNumbers = [];
+
         function seleccionarOpcion(numerosStr) {
             if (!numerosStr) return; // Si no hay valor, no hacer nada
 
-            // NO limpiar la selección previa. Solo agregar los nuevos números.
-            const nums = numerosStr.split(',');
-            nums.forEach(n => {
-                const btn = document.querySelector(`.num-btn[data-num="${n}"]`);
-                if (btn && !btn.classList.contains('selected')) {
-                    btn.classList.add('selected');
-                    selectedNumbers.push(n);
-                }
-            });
+            // Dividir la cadena y guardar los números en la variable temporal
+            pendingQuickNumbers = numerosStr.split(',');
+
+            // Abrir el modal de precio con un mensaje especial
+            document.getElementById('modalNumero').innerText = `Opción rápida (${pendingQuickNumbers.length} números)`;
+            document.getElementById('modalPrecio').value = '';
+            document.getElementById('modalPrecio').focus();
+            document.getElementById('precioModal').style.display = 'flex';
         }
 
         async function vender() {
