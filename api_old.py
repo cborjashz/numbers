@@ -29,6 +29,7 @@ class VentaRequest(BaseModel):
     cliente: str
     numeros: list[str]
     precio_unitario: float
+    cierre_elegido: str | None = None
 
 # ===== LÓGICA DE CIERRES =====
 def calcular_cierre(hora_venta: int) -> str:
@@ -129,6 +130,7 @@ async def validar_token(token: str):
     """
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     cursor = conn.cursor()
+    cursor.execute("SET TIMEZONE = 'America/Managua'")
     try:
         cursor.execute("""
             SELECT 
@@ -183,10 +185,11 @@ async def login(data: LoginRequest):
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Validar credenciales y obtener datos del usuario
+        # 1. Validar credenciales y obtener datos del usuario (INCLUIMOS id_mayorista)
         cursor.execute("""
-            SELECT id_usuario, nombre_usuario, limite_venta, fecha_expiracion, max_sesiones, activo
+            SELECT id_usuario, nombre_usuario, limite_venta, fecha_expiracion, max_sesiones, activo, id_mayorista
             FROM usuarios 
             WHERE nombre_usuario = %s AND password_hash = %s
         """, (data.usuario, data.password))
@@ -200,6 +203,7 @@ async def login(data: LoginRequest):
         fecha_expiracion = resultado[3]
         max_sesiones = resultado[4]
         activo = resultado[5]
+        id_mayorista = resultado[6]
 
         # 2. Verificar que el usuario esté activo
         if not activo:
@@ -223,9 +227,9 @@ async def login(data: LoginRequest):
             )
 
         # 5. Generar token único
-        token = secrets.token_hex(32)  # 64 caracteres hexadecimales
+        token = secrets.token_hex(32)
 
-        # 6. Definir expiración del token (ej: 8 horas desde ahora)
+        # 6. Definir expiración del token
         expiracion_token = ahora + timedelta(hours=8)
 
         # 7. Insertar la nueva sesión
@@ -237,12 +241,13 @@ async def login(data: LoginRequest):
         conn.commit()
         conn.close()
 
-        # 8. Devolver token y datos al frontend
+        # 8. Devolver token, datos y AHORA TAMBIÉN id_mayorista
         return {
             "usuario": nombre_usuario,
             "limite_venta": limite_venta,
             "token": token,
-            "expiracion": expiracion_token.isoformat()
+            "expiracion": expiracion_token.isoformat(),
+            "id_mayorista": id_mayorista  # <--- NUEVO CAMPO DEVUELTO
         }
 
     except Exception as e:
@@ -263,6 +268,7 @@ async def get_opciones(authorization: str = Header(None)):
 
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     cursor = conn.cursor()
+    cursor.execute("SET TIMEZONE = 'America/Managua'")
     cursor.execute("SELECT nombre_opcion, numeros_incluidos FROM opciones_rapidas ORDER BY id_opcion")
     filas = cursor.fetchall()
     conn.close()
@@ -289,22 +295,58 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         conn.autocommit = False
         cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
 
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
-        cierre = calcular_cierre(ahora.hour)
+        # 2. Determinar el cierre (elegido por el usuario o automático)
+        if venta.cierre_elegido:
+            # Validar que el cierre elegido sea uno de los válidos
+            cierres_validos = ["Cierre 1 (11am)", "Cierre 2 (3pm)", "Cierre 3 (9pm)"]
+            if venta.cierre_elegido not in cierres_validos:
+                raise HTTPException(status_code=400, detail="Cierre elegido no válido")
+
+            # --- VALIDACIÓN DE NO PERMITIR CIERRES YA PASADOS ---
+            # Mapeamos cada cierre a su hora límite (hora en que empieza el siguiente)
+            # Si son las 11:00 AM, ya no se puede elegir "Cierre 1"
+            # Si son las 3:00 PM, ya no se puede elegir "Cierre 2"
+            # Si son las 9:00 PM, ya no se puede elegir "Cierre 3"
+            hora_actual = ahora.hour
+
+            if venta.cierre_elegido == "Cierre 1 (11am)" and hora_actual >= 11:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="El Cierre 1 (11am) ya pasó. Elija el cierre actual o uno futuro."
+                )
+            elif venta.cierre_elegido == "Cierre 2 (3pm)" and hora_actual >= 15:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="El Cierre 2 (3pm) ya pasó. Elija el cierre actual o uno futuro."
+                )
+            elif venta.cierre_elegido == "Cierre 3 (9pm)" and hora_actual >= 21:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="El Cierre 3 (9pm) ya pasó. Elija el cierre actual o uno futuro."
+                )
+            # ------------------------------------------------
+
+            cierre = venta.cierre_elegido
+        else:
+            cierre = calcular_cierre(ahora.hour)
+
         total = venta.precio_unitario * len(venta.numeros)
 
-        # 1. Obtener límite de venta del usuario (desde el token ya tenemos id_usuario)
+        # 1. Obtener límite de venta Y EL MAYORISTA del usuario
         cursor.execute(
-            "SELECT limite_venta FROM usuarios WHERE id_usuario = %s",
+            "SELECT limite_venta, id_mayorista FROM usuarios WHERE id_usuario = %s",
             (id_usuario,)
         )
         resultado = cursor.fetchone()
         if not resultado:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         limite_venta = resultado[0]
+        id_mayorista = resultado[1]  # <--- OBTENEMOS EL ID DEL MAYORISTA
 
         if limite_venta is not None and venta.precio_unitario > limite_venta:
             raise HTTPException(
@@ -312,18 +354,19 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
                 detail=f"El precio por número (L. {venta.precio_unitario}) supera el límite permitido de L. {limite_venta}"
             )
 
-        # 2. Generar numero de recibo de forma aleatoria y unica
+        # 2. Generar numero de recibo
         num_recibo = int(f"{(int(ahora.timestamp() * 1000) % 10000000)}{random.randint(100, 999)}")
 
         # 3. Convertir la lista de números a JSONB
         numeros_json = json.dumps(venta.numeros)
 
-        # 4. Insertar UN SOLO registro con el array JSON
+        # 4. Insertar UN SOLO registro con el array JSON (AHORA INCLUYENDO id_mayorista)
         sql_insert = """
             INSERT INTO ventas (
                 num_recibo, id_usuario, cliente, numero_jugado, 
-                precio_unitario, cantidad, total, cierre_asignado, fecha_hora
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                precio_unitario, cantidad, total, cierre_asignado, fecha_hora,
+                id_mayorista
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(sql_insert, (
             num_recibo,
@@ -334,7 +377,8 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
             len(venta.numeros),
             total,
             cierre,
-            ahora
+            ahora,
+            id_mayorista  # <--- VALOR DEL MAYORISTA
         ))
 
         conn.commit()
@@ -377,6 +421,7 @@ async def obtener_recibo(num_recibo: int, authorization: str = Header(None)):
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
 
         cursor.execute("""
             SELECT cliente, precio_unitario, numero_jugado
@@ -424,6 +469,7 @@ async def reimprimir_recibo(num_recibo: int, authorization: str = Header(None)):
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
 
         cursor.execute("""
             SELECT 
@@ -495,6 +541,7 @@ async def logout(authorization: str = Header(None)):
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
         
         # Marcar la sesión como inactiva
         cursor.execute("""
@@ -516,6 +563,266 @@ async def logout(authorization: str = Header(None)):
     except Exception as e:
         if conn:
             conn.rollback()
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/tablero-estado")
+async def tablero_estado(authorization: str = Header(None)):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    id_usuario, _ = await validar_token(token)
+
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
+
+        # 1. Obtener el id_mayorista del usuario logueado
+        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] is None:
+            conn.close()
+            return {}
+
+        id_mayorista = resultado[0]
+
+        # 2. Obtener la hora actual y calcular el cierre
+        managua_tz = timezone(timedelta(hours=-6))
+        ahora = datetime.now(managua_tz)
+        cierre_actual = calcular_cierre(ahora.hour)
+        fecha_actual = ahora.date()
+
+        # 3. Consulta SQL CORREGIDA: filtra por fecha, cierre, mayorista Y VENDEDOR
+        cursor.execute("""
+            SELECT 
+                num_individual AS numero,
+                SUM(v.precio_unitario) AS monto_total
+            FROM ventas v,
+            LATERAL jsonb_array_elements_text(v.numero_jugado) AS num_individual
+            WHERE v.cierre_asignado = %s
+              AND v.id_mayorista = %s
+              AND v.id_usuario = %s
+              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
+            GROUP BY num_individual
+        """, (cierre_actual, id_mayorista, id_usuario, fecha_actual))
+
+        filas = cursor.fetchall()
+        conn.close()
+
+        resultado = {}
+        for num, monto in filas:
+            resultado[num] = float(monto)
+
+        return resultado
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/reporte-ventas-cliente")
+async def reporte_ventas_cliente(
+    authorization: str = Header(None),
+    fecha_inicio: str = None,
+    fecha_fin: str = None
+):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    id_usuario, _ = await validar_token(token)
+
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
+
+        # 1. Obtener id_mayorista del usuario
+        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] is None:
+            conn.close()
+            return []
+
+        id_mayorista = resultado[0]
+
+        # 2. Determinar rango de fechas
+        managua_tz = timezone(timedelta(hours=-6))
+        hoy = datetime.now(managua_tz).date()
+
+        if fecha_inicio:
+            fecha_inicio_dt = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+        else:
+            fecha_inicio_dt = hoy
+
+        if fecha_fin:
+            fecha_fin_dt = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+        else:
+            fecha_fin_dt = hoy
+
+        # 3. Consulta SQL: Agrupar por cliente y cierre
+        cursor.execute("""
+            SELECT 
+                cliente,
+                cierre_asignado,
+                SUM(cantidad) AS total_numeros,
+                SUM(total) AS total_monto
+            FROM ventas
+            WHERE id_mayorista = %s
+              AND id_usuario = %s
+              AND DATE(fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
+            GROUP BY cliente, cierre_asignado
+            ORDER BY cliente, cierre_asignado
+        """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
+
+        filas = cursor.fetchall()
+        conn.close()
+
+        # 4. Formatear respuesta
+        resultado = []
+        for cliente, cierre, total_numeros, total_monto in filas:
+            resultado.append({
+                "cliente": cliente,
+                "cierre": cierre,
+                "total_numeros": int(total_numeros),
+                "total_monto": float(total_monto)
+            })
+
+        return resultado
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/reporte-ventas-cliente-pdf")
+async def reporte_ventas_cliente_pdf(
+    authorization: str = Header(None),
+    fecha_inicio: str = None,
+    fecha_fin: str = None
+):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    id_usuario, _ = await validar_token(token)
+
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
+
+        # 1. Obtener id_mayorista del usuario
+        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] is None:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Usuario sin mayorista")
+
+        id_mayorista = resultado[0]
+
+        # 2. Determinar rango de fechas
+        managua_tz = timezone(timedelta(hours=-6))
+        hoy = datetime.now(managua_tz).date()
+
+        if fecha_inicio:
+            fecha_inicio_dt = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+        else:
+            fecha_inicio_dt = hoy
+
+        if fecha_fin:
+            fecha_fin_dt = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+        else:
+            fecha_fin_dt = hoy
+
+        # 3. Consulta SQL: Agrupar por cliente y cierre
+        cursor.execute("""
+            SELECT 
+                cliente,
+                cierre_asignado,
+                SUM(cantidad) AS total_numeros,
+                SUM(total) AS total_monto
+            FROM ventas
+            WHERE id_mayorista = %s
+              AND id_usuario = %s
+              AND DATE(fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
+            GROUP BY cliente, cierre_asignado
+            ORDER BY cliente, cierre_asignado
+        """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
+
+        filas = cursor.fetchall()
+        conn.close()
+
+        # 4. Generar PDF
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+
+        # Título
+        c.setFont("Helvetica-Bold", 18)
+        c.drawCentredString(width / 2, height - 50, "Reporte de Ventas por Cliente")
+
+        # Fechas
+        c.setFont("Helvetica", 12)
+        c.drawString(50, height - 80, f"Desde: {fecha_inicio_dt.strftime('%d/%m/%Y')}")
+        c.drawString(250, height - 80, f"Hasta: {fecha_fin_dt.strftime('%d/%m/%Y')}")
+
+        # Encabezados de tabla
+        y = height - 120
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, y, "Cliente")
+        c.drawString(200, y, "Cierre")
+        c.drawString(350, y, "Números")
+        c.drawString(450, y, "Total L.")
+        c.line(50, y - 5, 550, y - 5)
+
+        # Datos
+        y -= 25
+        c.setFont("Helvetica", 11)
+        total_general = 0
+
+        for cliente, cierre, total_numeros, total_monto in filas:
+            if y < 50:  # Salto de página si no hay espacio
+                c.showPage()
+                y = height - 50
+                c.setFont("Helvetica", 11)
+
+            c.drawString(50, y, cliente[:30])  # Truncar si es muy largo
+            c.drawString(200, y, cierre)
+            c.drawString(350, y, str(total_numeros))
+            c.drawString(450, y, f"{total_monto:.2f}")
+            total_general += total_monto
+            y -= 20
+
+        # Total general
+        y -= 10
+        c.setFont("Helvetica-Bold", 12)
+        c.line(50, y - 5, 550, y - 5)
+        c.drawString(350, y, "TOTAL GENERAL")
+        c.drawString(450, y, f"{total_general:.2f}")
+
+        c.save()
+        buffer.seek(0)
+
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=reporte_ventas_{fecha_inicio_dt.strftime('%Y%m%d')}_a_{fecha_fin_dt.strftime('%Y%m%d')}.pdf"}
+        )
+
+    except Exception as e:
+        if conn:
             conn.close()
         if isinstance(e, HTTPException):
             raise e

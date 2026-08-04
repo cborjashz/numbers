@@ -14,9 +14,48 @@
         button { width: 100%; padding: 15px; margin-top: 15px; border: none; border-radius: 8px; background: #00a86b; color: white; font-size: 18px; font-weight: bold; cursor: pointer; }
         button:hover { background: #008f5a; }
         .grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; margin: 20px 0; }
-        .num-btn { padding: 10px 0; background: #3b3b5c; border: none; border-radius: 5px; color: white; font-size: 14px; cursor: pointer; }
-        .num-btn.selected { background: #00a86b; color: black; font-weight: bold; }
-        .num-btn:hover { background: #4a4a6e; }
+        /* Estilos para que el botón tenga el número grande y el monto pequeño debajo */
+        .num-btn {
+            padding: 8px 0 4px 0;  /* Ajustamos padding para que quepa el monto */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 55px;  /* Altura fija para que todos sean uniformes */
+            line-height: 1.2;
+            background: #3b3b5c;   /* Fondo oscuro normal */
+            color: #ffffff;        /* Texto del número SIEMPRE blanco */            
+        }
+        /* Cuando el número está SELECCIONADO: solo cambia el fondo */
+        .num-btn.selected {
+            background: #00a86b;   /* Fondo verde elegante */
+            color: #ffffff;        /* El texto del número SIGUE siendo blanco */
+            box-shadow: 0 0 8px rgba(0, 168, 107, 0.5); /* Un brillo suave */
+        }
+        .num-btn.selected div {
+            color: black !important;  /* El monto también se vuelve negro al seleccionar */
+        }
+        .num-btn:hover {
+            background: #4a4a6e;
+        }
+        .num-btn.selected:hover {
+            background: #009a5f;   /* Un verde un poco más oscuro al pasar el mouse */
+        }        
+        
+        /* El monto (texto dorado) siempre mantiene su color */
+        .num-btn div:last-child {
+            font-size: 9px;
+            color: #f0e68c;        /* Dorado claro */
+            font-weight: bold;
+            text-shadow: 0 0 3px rgba(0,0,0,0.5);
+        }
+
+        /* Cuando está seleccionado, el monto también mantiene su color dorado */
+        .num-btn.selected div:last-child {
+            color: #f0e68c;        /* Se mantiene dorado */
+            text-shadow: 0 0 3px rgba(0,0,0,0.5);
+        }
+        
         .opciones-rapidas { display: flex; flex-wrap: wrap; gap: 10px; margin: 15px 0; }
         .opcion-btn { flex: 1; min-width: 60px; padding: 10px; background: #ffaa00; color: black; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
         .opcion-btn:hover { background: #e69900; }
@@ -53,6 +92,10 @@
             <div style="display:flex; justify-content:space-between;">
                 <span id="userDisplay" style="font-weight:bold;"></span>
                 <button class="logout" onclick="logout()" style="width:auto; padding:5px 15px;">Salir</button>
+                <!-- Botón para abrir reporte -->
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                    <button onclick="abrirReporte()" style="width: auto; padding: 8px 15px; background: #f39c12; color: black; font-size: 14px; border-radius: 8px;">📊 Reporte por Cliente</button>
+                </div>
             </div>
 
             <!-- Cargar recibo de referencia -->
@@ -62,8 +105,13 @@
                 <button onclick="reimprimirRecibo()" style="width: auto; padding: 10px 15px; background: #2196f3; color: white;" title="Reimprimir recibo">🖨️</button>
             </div>
 
-            <!-- Opciones rápidas (cargadas desde la BD) -->
-            <div class="opciones-rapidas" id="opcionesContainer"></div>
+            <!-- Opciones rápidas (combobox) -->
+            <div style="display: flex; gap: 10px; margin: 15px 0; align-items: center;">
+                <label for="opcionesSelect" style="font-size: 14px; font-weight: bold;">Opción rápida:</label>
+                <select id="opcionesSelect" style="flex: 1; padding: 10px; background: #3b3b5c; color: white; border: none; border-radius: 8px; font-size: 14px;">
+                    <option value="">-- Seleccione una opción --</option>
+                </select>
+            </div>
 
             <!-- Botón para limpiar selección -->
             <div style="display: flex; justify-content: center; margin: 5px 0 15px 0;">
@@ -78,6 +126,18 @@
                 <input type="text" id="clienteInput" placeholder="Cliente">
                 <input type="number" id="precioInput" placeholder="Precio L." step="0.01">
             </div>
+
+            <!-- Selector de cierre -->
+            <div style="display: flex; gap: 10px; margin: 10px 0; align-items: center;">
+                <label for="cierreSelect" style="font-size: 14px; font-weight: bold;">Cierre:</label>
+                <select id="cierreSelect" style="width: auto; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
+                    <option value="">Automático (según hora)</option>
+                    <option value="Cierre 1 (11am)">Cierre 1 (11am)</option>
+                    <option value="Cierre 2 (3pm)">Cierre 2 (3pm)</option>
+                    <option value="Cierre 3 (9pm)">Cierre 3 (9pm)</option>
+                </select>
+            </div>
+
             <button onclick="vender()">🟢 VENDER</button>
             <div id="resultMsg" class="message"></div>
         </div>
@@ -159,10 +219,61 @@
                 const num = i.toString().padStart(2, '0');
                 const btn = document.createElement('button');
                 btn.className = 'num-btn';
-                btn.innerText = num;
+                btn.id = `btn-${num}`;  // Agregamos un ID para identificarlo fácilmente
+                
+                // Estructura interna: número grande + espacio para el monto
+                btn.innerHTML = `
+                    <div style="font-size: 16px; font-weight: bold;">${num}</div>
+                    <div id="monto-${num}" style="font-size: 10px; color: #ffd700; margin-top: 2px; font-weight: normal;"></div>
+                `;
+                
                 btn.dataset.num = num;
                 btn.onclick = () => toggleNumber(num, btn);
                 grid.appendChild(btn);
+            }
+            // Después de generar el tablero, cargamos los montos
+            actualizarMontosTablero();
+        }
+
+        async function actualizarMontosTablero() {
+            const token = localStorage.getItem('loteria_token');
+            if (!token) return; // Si no hay token, no hacemos nada
+
+            try {
+                const res = await fetch(API + '/tablero-estado', {
+                    headers: {
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        // Si el token expiró, cerramos sesión
+                        logout();
+                        return;
+                    }
+                    return; // Si hay otro error, simplemente no actualizamos
+                }
+
+                const datos = await res.json(); // Ej: {"00": 350.0, "05": 1200.0}
+
+                // Recorrer todos los botones (00 al 99) y actualizar el monto
+                for (let i = 0; i < 100; i++) {
+                    const num = i.toString().padStart(2, '0');
+                    const montoDiv = document.getElementById(`monto-${num}`);
+                    if (montoDiv) {
+                        const monto = datos[num];
+                        if (monto && monto > 0) {
+                            // Formatear con separador de miles y 2 decimales
+                            montoDiv.innerText = `L. ${monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                            montoDiv.style.color = '#ffd700'; // Dorado
+                        } else {
+                            montoDiv.innerText = '';
+                            montoDiv.style.color = '#ffd700';
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error al actualizar montos del tablero:', error);
             }
         }
 
@@ -202,12 +313,10 @@
                 document.getElementById('clienteInput').value = data.cliente;
                 document.getElementById('precioInput').value = data.precio_unitario;
         
-                document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
-                selectedNumbers = [];
-        
+                // NO limpiar la selección previa. Solo agregar los números del recibo.
                 data.numeros.forEach(num => {
                     const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
-                    if (btn) {
+                    if (btn && !btn.classList.contains('selected')) {
                         btn.classList.add('selected');
                         selectedNumbers.push(num);
                     }
@@ -280,8 +389,11 @@
         }
 
         async function cargarOpciones() {
-            const container = document.getElementById('opcionesContainer');
-            container.innerHTML = '';
+            const select = document.getElementById('opcionesSelect');
+            // Limpiar opciones previas (pero mantener la primera)
+            while (select.options.length > 1) {
+                select.remove(1);
+            }
 
             const token = localStorage.getItem('loteria_token');
             if (!token) {
@@ -308,17 +420,29 @@
             const opciones = await res.json();
             
             if (opciones.length === 0) {
-                container.innerHTML = '<div style="color:#aaa; font-size:14px; text-align:center; width:100%;">No hay opciones rápidas configuradas</div>';
+                // Si no hay opciones, agregamos una opción informativa
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'No hay opciones rápidas configuradas';
+                opt.disabled = true;
+                select.appendChild(opt);
                 return;
             }
             
             opciones.forEach(op => {
-                const btn = document.createElement('button');
-                btn.className = 'opcion-btn';
-                btn.innerText = op.nombre_opcion;
-                btn.onclick = () => seleccionarOpcion(op.numeros_incluidos);
-                container.appendChild(btn);
+                const opt = document.createElement('option');
+                opt.value = op.numeros_incluidos;
+                opt.textContent = op.nombre_opcion;
+                select.appendChild(opt);
             });
+
+            // Agregar evento para cuando el usuario seleccione una opción
+            select.onchange = function() {
+                seleccionarOpcion(this.value);
+                // Opcional: resetear el combobox después de seleccionar (para poder elegir otra)
+                // this.value = '';
+            };
+
         }
 
         function limpiarSeleccion() {
@@ -328,18 +452,23 @@
         }
 
         function seleccionarOpcion(numerosStr) {
-            document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
-            selectedNumbers = [];
+            if (!numerosStr) return; // Si no hay valor, no hacer nada
+
+            // NO limpiar la selección previa. Solo agregar los nuevos números.
             const nums = numerosStr.split(',');
             nums.forEach(n => {
                 const btn = document.querySelector(`.num-btn[data-num="${n}"]`);
-                if (btn) { btn.classList.add('selected'); selectedNumbers.push(n); }
+                if (btn && !btn.classList.contains('selected')) {
+                    btn.classList.add('selected');
+                    selectedNumbers.push(n);
+                }
             });
         }
 
         async function vender() {
             const cliente = document.getElementById('clienteInput').value;
             const precio = document.getElementById('precioInput').value;
+            const cierreElegido = document.getElementById('cierreSelect').value;
 
             if (parseFloat(precio) <= 0) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ El precio debe ser mayor a 0</span>';
@@ -371,7 +500,8 @@
                     nombre_vendedor: currentUser,
                     cliente: cliente,
                     numeros: selectedNumbers,
-                    precio_unitario: parseFloat(precio)
+                    precio_unitario: parseFloat(precio),
+                    cierre_elegido: cierreElegido || null 
                 })
             });
             
@@ -392,6 +522,9 @@
                 selectedNumbers = [];
                 document.getElementById('clienteInput').value = '';
                 document.getElementById('precioInput').value = '';
+                // === AGREGAR ESTA LÍNEA ===
+                actualizarMontosTablero();  // Actualizar los montos después de la venta
+
             } else {
                 if (res.status === 401) {
                     document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
@@ -399,9 +532,135 @@
                     return;
                 }
                 const data = await res.json();
-                document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
+                document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;            
+            }
+
+
+        }
+
+        function abrirReporte() {
+            document.getElementById('reporteModal').style.display = 'flex';
+            // Establecer fechas por defecto (hoy)
+            const hoy = new Date().toISOString().split('T')[0];
+            document.getElementById('reporteFechaInicio').value = hoy;
+            document.getElementById('reporteFechaFin').value = hoy;
+            cargarReporte();
+        }
+
+        function cerrarReporte() {
+            document.getElementById('reporteModal').style.display = 'none';
+        }
+
+        async function cargarReporte() {
+            const fechaInicio = document.getElementById('reporteFechaInicio').value;
+            const fechaFin = document.getElementById('reporteFechaFin').value;
+
+            if (!fechaInicio || !fechaFin) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Seleccione ambas fechas</td></tr>';
+                return;
+            }
+
+            const token = localStorage.getItem('loteria_token');
+            if (!token) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API}/reporte-ventas-cliente?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
+                        return;
+                    }
+                    const data = await res.json();
+                    document.getElementById('reporteTableBody').innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ ${data.detail}</td></tr>`;
+                    return;
+                }
+
+                const datos = await res.json();
+
+                if (datos.length === 0) {
+                    document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #aaa;">No hay ventas en el rango seleccionado</td></tr>';
+                    return;
+                }
+
+                let html = '';
+                let totalGeneral = 0;
+                datos.forEach(item => {
+                    totalGeneral += item.total_monto;
+                    html += `
+                        <tr style="border-bottom: 1px solid #3b3b5c;">
+                            <td style="padding: 8px;">${item.cliente}</td>
+                            <td style="padding: 8px;">${item.cierre}</td>
+                            <td style="padding: 8px; text-align: center;">${item.total_numeros}</td>
+                            <td style="padding: 8px; text-align: right;">L. ${item.total_monto.toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                    <tr style="background: #00a86b; font-weight: bold;">
+                        <td colspan="3" style="padding: 8px; text-align: right;">TOTAL GENERAL</td>
+                        <td style="padding: 8px; text-align: right;">L. ${totalGeneral.toFixed(2)}</td>
+                    </tr>
+                `;
+
+                document.getElementById('reporteTableBody').innerHTML = html;
+
+            } catch (error) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Error de conexión</td></tr>';
             }
         }
+        
+        async function descargarReportePDF() {
+            const fechaInicio = document.getElementById('reporteFechaInicio').value;
+            const fechaFin = document.getElementById('reporteFechaFin').value;
+
+            if (!fechaInicio || !fechaFin) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Seleccione ambas fechas</td></tr>';
+                return;
+            }
+
+            const token = localStorage.getItem('loteria_token');
+            if (!token) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API}/reporte-ventas-cliente-pdf?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
+                        return;
+                    }
+                    const data = await res.json();
+                    document.getElementById('reporteTableBody').innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ ${data.detail}</td></tr>`;
+                    return;
+                }
+
+                // Descargar el PDF
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `reporte_ventas_${fechaInicio}_a_${fechaFin}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+            } catch (error) {
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Error de conexión</td></tr>';
+            }
+        }                
 
         // Verificar si ya hay una sesión guardada al cargar la página
         window.onload = function() {
@@ -417,6 +676,37 @@
                 generarTablero();
             }
         };
+
     </script>
+    <!-- MODAL DE REPORTE -->
+    <div id="reporteModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: #2d2d44; padding: 20px; border-radius: 15px; width: 90%; max-width: 700px; max-height: 80vh; overflow-y: auto; color: white;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                <h2 style="margin: 0;">📊 Reporte de Ventas por Cliente</h2>
+                <button onclick="cerrarReporte()" style="background: #d32f2f; color: white; border: none; border-radius: 5px; padding: 5px 15px; cursor: pointer;">✕ Cerrar</button>
+            </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <input type="date" id="reporteFechaInicio" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
+                <input type="date" id="reporteFechaFin" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
+                <button onclick="cargarReporte()" style="width: auto; padding: 8px 15px; background: #00a86b; color: white; border: none; border-radius: 5px;">🔍 Cargar</button>
+                <button onclick="descargarReportePDF()" style="width: auto; padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 5px;">📄 Descargar PDF</button>
+            </div>
+            <div id="reporteResultado" style="max-height: 400px; overflow-y: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                    <thead style="background: #3b3b5c; position: sticky; top: 0;">
+                        <tr>
+                            <th style="padding: 8px; text-align: left;">Cliente</th>
+                            <th style="padding: 8px; text-align: left;">Cierre</th>
+                            <th style="padding: 8px; text-align: center;">Números</th>
+                            <th style="padding: 8px; text-align: right;">Total L.</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reporteTableBody">
+                        <tr><td colspan="4" style="text-align: center; padding: 20px; color: #aaa;">Seleccione fechas y presione "Cargar"</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

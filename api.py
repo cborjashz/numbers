@@ -27,8 +27,7 @@ class LoginRequest(BaseModel):
 class VentaRequest(BaseModel):
     nombre_vendedor: str
     cliente: str
-    numeros: list[str]
-    precio_unitario: float
+    items: list[dict]  # Lista de objetos {"numero": "05", "precio": 10.0}
     cierre_elegido: str | None = None
 
 # ===== LÓGICA DE CIERRES =====
@@ -282,15 +281,14 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
     token = authorization.replace("Bearer ", "")
     id_usuario, nombre_vendedor = await validar_token(token)
 
-    # (Opcional: podrías usar el nombre_vendedor del token en lugar del que viene en el body)
-    # Forzamos a que el vendedor sea el del token para seguridad
     venta.nombre_vendedor = nombre_vendedor
 
     conn = None
     try:
         # === VALIDACIÓN DE PRECIO NEGATIVO ===
-        if venta.precio_unitario <= 0:
-            raise HTTPException(status_code=400, detail="El precio unitario debe ser mayor a 0")
+        for item in venta.items:
+            if item["precio"] <= 0:
+                raise HTTPException(status_code=400, detail="Todos los precios deben ser mayores a 0")
 
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         conn.autocommit = False
@@ -300,44 +298,27 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
-        # 2. Determinar el cierre (elegido por el usuario o automático)
+        # 1. Determinar el cierre
         if venta.cierre_elegido:
-            # Validar que el cierre elegido sea uno de los válidos
             cierres_validos = ["Cierre 1 (11am)", "Cierre 2 (3pm)", "Cierre 3 (9pm)"]
             if venta.cierre_elegido not in cierres_validos:
                 raise HTTPException(status_code=400, detail="Cierre elegido no válido")
-
-            # --- VALIDACIÓN DE NO PERMITIR CIERRES YA PASADOS ---
-            # Mapeamos cada cierre a su hora límite (hora en que empieza el siguiente)
-            # Si son las 11:00 AM, ya no se puede elegir "Cierre 1"
-            # Si son las 3:00 PM, ya no se puede elegir "Cierre 2"
-            # Si son las 9:00 PM, ya no se puede elegir "Cierre 3"
             hora_actual = ahora.hour
-
             if venta.cierre_elegido == "Cierre 1 (11am)" and hora_actual >= 11:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="El Cierre 1 (11am) ya pasó. Elija el cierre actual o uno futuro."
-                )
+                raise HTTPException(status_code=400, detail="El Cierre 1 (11am) ya pasó.")
             elif venta.cierre_elegido == "Cierre 2 (3pm)" and hora_actual >= 15:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="El Cierre 2 (3pm) ya pasó. Elija el cierre actual o uno futuro."
-                )
+                raise HTTPException(status_code=400, detail="El Cierre 2 (3pm) ya pasó.")
             elif venta.cierre_elegido == "Cierre 3 (9pm)" and hora_actual >= 21:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="El Cierre 3 (9pm) ya pasó. Elija el cierre actual o uno futuro."
-                )
-            # ------------------------------------------------
-
+                raise HTTPException(status_code=400, detail="El Cierre 3 (9pm) ya pasó.")
             cierre = venta.cierre_elegido
         else:
             cierre = calcular_cierre(ahora.hour)
 
-        total = venta.precio_unitario * len(venta.numeros)
+        # 2. Calcular total y extraer números
+        total = sum(item["precio"] for item in venta.items)
+        numeros = [item["numero"] for item in venta.items]
 
-        # 1. Obtener límite de venta Y EL MAYORISTA del usuario
+        # 3. Obtener límite de venta y mayorista
         cursor.execute(
             "SELECT limite_venta, id_mayorista FROM usuarios WHERE id_usuario = %s",
             (id_usuario,)
@@ -346,21 +327,26 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         if not resultado:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         limite_venta = resultado[0]
-        id_mayorista = resultado[1]  # <--- OBTENEMOS EL ID DEL MAYORISTA
+        id_mayorista = resultado[1]
 
-        if limite_venta is not None and venta.precio_unitario > limite_venta:
+        # Validar límite por número (usamos el precio más alto de la venta)
+        precio_maximo = max(item["precio"] for item in venta.items)
+        if limite_venta is not None and precio_maximo > limite_venta:
             raise HTTPException(
                 status_code=400,
-                detail=f"El precio por número (L. {venta.precio_unitario}) supera el límite permitido de L. {limite_venta}"
+                detail=f"El precio máximo (L. {precio_maximo}) supera el límite permitido de L. {limite_venta}"
             )
 
-        # 2. Generar numero de recibo
+        # 4. Generar número de recibo
         num_recibo = int(f"{(int(ahora.timestamp() * 1000) % 10000000)}{random.randint(100, 999)}")
 
-        # 3. Convertir la lista de números a JSONB
-        numeros_json = json.dumps(venta.numeros)
+        # 5. Guardar en la BD
+        # Guardamos el array de números (solo los números) en numero_jugado JSONB
+        # Guardamos el precio_unitario como el precio promedio (para compatibilidad con reportes antiguos)
+        # Guardamos la cantidad como la cantidad de números
+        numeros_json = json.dumps(numeros)
+        precio_promedio = total / len(numeros) if numeros else 0
 
-        # 4. Insertar UN SOLO registro con el array JSON (AHORA INCLUYENDO id_mayorista)
         sql_insert = """
             INSERT INTO ventas (
                 num_recibo, id_usuario, cliente, numero_jugado, 
@@ -373,23 +359,24 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
             id_usuario,
             venta.cliente,
             numeros_json,
-            venta.precio_unitario,
-            len(venta.numeros),
+            precio_promedio,
+            len(numeros),
             total,
             cierre,
             ahora,
-            id_mayorista  # <--- VALOR DEL MAYORISTA
+            id_mayorista
         ))
 
         conn.commit()
 
+        # 6. Generar PDF
         fecha_str = ahora.strftime("%d-%m-%Y %H:%M:%S")
         pdf_buffer = generar_recibo_pdf(
             num_recibo=num_recibo,
             fecha_emision=fecha_str,
             cliente=venta.cliente,
-            numeros=venta.numeros,
-            precio_unitario=venta.precio_unitario,
+            numeros=numeros,
+            precio_unitario=precio_promedio,
             total=total,
             cierre=cierre,
             vendedor=venta.nombre_vendedor
