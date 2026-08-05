@@ -127,10 +127,13 @@
                 <input type="number" id="precioInput" placeholder="Precio L." step="0.01">
             </div>
 
-            <!-- Selector de cierre -->
-            <div style="display: flex; gap: 10px; margin: 10px 0; align-items: center;">
-                <label for="cierreSelect" style="font-size: 14px; font-weight: bold;">Cierre:</label>
-                <select id="cierreSelect" style="width: auto; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
+            <!-- Selectores de fecha y cierre (misma fila) -->
+            <div style="display: flex; gap: 10px; margin: 10px 0; align-items: center; flex-wrap: wrap;">
+                <label for="fechaSelect" style="font-size: 14px; font-weight: bold;">📅 Fecha:</label>
+                <input type="date" id="fechaSelect" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 120px;">
+                
+                <label for="cierreSelect" style="font-size: 14px; font-weight: bold;">🕒 Cierre:</label>
+                <select id="cierreSelect" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 120px;">
                     <option value="">Automático (según hora)</option>
                     <option value="Cierre 1 (11am)">Cierre 1 (11am)</option>
                     <option value="Cierre 2 (3pm)">Cierre 2 (3pm)</option>
@@ -210,6 +213,11 @@
                 document.getElementById('gameBox').classList.add('active');
                 cargarOpciones();
                 generarTablero();
+                // Establecer fecha actual por defecto en el selector
+                const hoy = new Date();
+                const fechaLocal = hoy.toISOString().split('T')[0];
+                document.getElementById('fechaSelect').value = fechaLocal;  
+                
             } else {
                 document.getElementById('loginMsg').innerText = '❌ ' + data.detail;
             }
@@ -271,26 +279,38 @@
             actualizarMontosTablero();
         }
 
+      
+
         async function actualizarMontosTablero() {
             const token = localStorage.getItem('loteria_token');
             if (!token) return; // Si no hay token, no hacemos nada
 
+            // Leer valores de los selectores
+            const fecha = document.getElementById('fechaSelect').value;
+            const cierre = document.getElementById('cierreSelect').value;
+
+            // Construir la URL con los parámetros
+            let url = API + '/tablero-estado';
+            const params = [];
+            if (fecha) params.push(`fecha=${fecha}`);
+            if (cierre) params.push(`cierre=${encodeURIComponent(cierre)}`);
+            if (params.length > 0) url += '?' + params.join('&');
+
             try {
-                const res = await fetch(API + '/tablero-estado', {
+                const res = await fetch(url, {
                     headers: {
                         'Authorization': 'Bearer ' + token
                     }
                 });
                 if (!res.ok) {
                     if (res.status === 401) {
-                        // Si el token expiró, cerramos sesión
                         logout();
                         return;
                     }
-                    return; // Si hay otro error, simplemente no actualizamos
+                    return;
                 }
 
-                const datos = await res.json(); // Ej: {"00": 350.0, "05": 1200.0}
+                const datos = await res.json();
 
                 // Recorrer todos los botones (00 al 99) y actualizar el monto
                 for (let i = 0; i < 100; i++) {
@@ -299,9 +319,8 @@
                     if (montoDiv) {
                         const monto = datos[num];
                         if (monto && monto > 0) {
-                            // Formatear con separador de miles y 2 decimales
                             montoDiv.innerText = `L. ${monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                            montoDiv.style.color = '#ffd700'; // Dorado
+                            montoDiv.style.color = '#ffd700';
                         } else {
                             montoDiv.innerText = '';
                             montoDiv.style.color = '#ffd700';
@@ -598,6 +617,14 @@
                 // Opcional: resetear el combobox después de seleccionar (para poder elegir otra)
                 // this.value = '';
             };
+
+            // Agregar eventos para actualizar automáticamente al cambiar fecha o cierre
+            document.getElementById('fechaSelect').onchange = function() {
+                actualizarMontosTablero();
+            };
+            document.getElementById('cierreSelect').onchange = function() {
+                actualizarMontosTablero();
+            };            
 
         }
 

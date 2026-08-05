@@ -517,7 +517,11 @@ async def logout(authorization: str = Header(None)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/tablero-estado")
-async def tablero_estado(authorization: str = Header(None)):
+async def tablero_estado(
+    authorization: str = Header(None),
+    fecha: str = None,
+    cierre: str = None
+):
     # Validar token
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
@@ -539,17 +543,27 @@ async def tablero_estado(authorization: str = Header(None)):
 
         id_mayorista = resultado[0]
 
-        # 2. Obtener la hora actual y calcular el cierre
+        # 2. Determinar fecha y cierre (usando zona Managua)
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
-        cierre_actual = calcular_cierre(ahora.hour)
-        fecha_actual = ahora.date()
 
-        # 3. Consulta SQL CORREGIDA: usar detalle_venta en lugar de precio_unitario
+        # Si no se envió fecha, usar hoy
+        if fecha:
+            fecha_consulta = datetime.strptime(fecha, "%Y-%m-%d").date()
+        else:
+            fecha_consulta = ahora.date()
+
+        # Si no se envió cierre, calcular automático
+        if cierre:
+            cierre_consulta = cierre
+        else:
+            cierre_consulta = calcular_cierre(ahora.hour)
+
+        # 3. Consulta SQL usando los filtros dinámicos
         cursor.execute("""
             SELECT 
                 num_individual AS numero,
-                SUM(precio) AS monto_total
+                SUM((detalle->>'precio')::numeric) AS monto_total
             FROM ventas v,
             LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
             LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
@@ -558,7 +572,7 @@ async def tablero_estado(authorization: str = Header(None)):
               AND v.id_usuario = %s
               AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
             GROUP BY num_individual
-        """, (cierre_actual, id_mayorista, id_usuario, fecha_actual))
+        """, (cierre_consulta, id_mayorista, id_usuario, fecha_consulta))
 
         filas = cursor.fetchall()
         conn.close()
