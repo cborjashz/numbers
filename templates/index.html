@@ -346,19 +346,23 @@
         
                 const data = await res.json();
         
-                document.getElementById('clienteInput').value = data.cliente;
-                document.getElementById('precioInput').value = data.precio_unitario;
-        
-                // NO limpiar la selección previa. Solo agregar los números del recibo.
-                data.numeros.forEach(num => {
+                // Limpiar selección previa y tabla resumen
+                limpiarSeleccion();
+
+                // Agregar los números con sus precios a la tabla resumen y al tablero
+                data.items.forEach(item => {
+                    const num = item.numero;
+                    const precio = item.precio;
                     const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
                     if (btn && !btn.classList.contains('selected')) {
                         btn.classList.add('selected');
                         selectedNumbers.push(num);
+                        // Agregar a la tabla resumen con su precio
+                        agregarAResumen(num, precio);
                     }
                 });
         
-                document.getElementById('resultMsg').innerHTML = `<span class="success">✅ Recibo ${numRecibo} cargado! ${data.numeros.length} números seleccionados.</span>`;
+                document.getElementById('resultMsg').innerHTML = `<span class="success">✅ Recibo ${numRecibo} cargado! ${data.items.length} números con sus precios.</span>`;
         
             } catch (error) {
                 document.getElementById('resultMsg').innerHTML = `<span class="error">❌ Error de conexión</span>`;
