@@ -545,13 +545,14 @@ async def tablero_estado(authorization: str = Header(None)):
         cierre_actual = calcular_cierre(ahora.hour)
         fecha_actual = ahora.date()
 
-        # 3. Consulta SQL CORREGIDA: filtra por fecha, cierre, mayorista Y VENDEDOR
+        # 3. Consulta SQL CORREGIDA: usar detalle_venta en lugar de precio_unitario
         cursor.execute("""
             SELECT 
                 num_individual AS numero,
-                SUM(v.precio_unitario) AS monto_total
+                SUM(precio) AS monto_total
             FROM ventas v,
-            LATERAL jsonb_array_elements_text(v.numero_jugado) AS num_individual
+            LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+            LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
             WHERE v.cierre_asignado = %s
               AND v.id_mayorista = %s
               AND v.id_usuario = %s
