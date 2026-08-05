@@ -372,12 +372,19 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         # 6. Generar número de recibo
         num_recibo = int(f"{(int(ahora.timestamp() * 1000) % 10000000)}{random.randint(100, 999)}")
 
-        # 7. Guardar en la BD (SOLO el detalle_venta, sin promedios)
+        # 7. Preparar datos para la BD
+        # - numero_jugado: lista plana de números (para cumplir NOT NULL)
+        # - detalle_venta: detalle agrupado por precio (fuente de verdad)
+        numeros_planos = [item["numero"] for item in venta.items]
+        numeros_json = json.dumps(numeros_planos)
+
+        # 8. Guardar en la BD
         sql_insert = """
             INSERT INTO ventas (
                 num_recibo, id_usuario, cliente, fecha_hora,
-                cierre_asignado, id_mayorista, total, detalle_venta
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                cierre_asignado, id_mayorista, total,
+                numero_jugado, detalle_venta
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(sql_insert, (
             num_recibo,
@@ -387,7 +394,8 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
             cierre,
             id_mayorista,
             total,
-            detalle_json
+            numeros_json,      # <--- LISTA PLANA DE NÚMEROS (para NOT NULL)
+            detalle_json       # <--- DETALLE AGRUPADO (fuente de verdad)
         ))
 
         conn.commit()
