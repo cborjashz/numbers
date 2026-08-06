@@ -631,28 +631,30 @@ async def reporte_ventas_cliente(
         else:
             fecha_fin_dt = hoy
 
-        # 3. Consulta SQL: Agrupar por cliente y cierre
+        # 3. Consulta SQL: Agregamos num_recibo al SELECT y al GROUP BY
         cursor.execute("""
             SELECT 
-                cliente,
-                cierre_asignado,
-                SUM(cantidad) AS total_numeros,
-                SUM(total) AS total_monto
-            FROM ventas
-            WHERE id_mayorista = %s
-              AND id_usuario = %s
-              AND DATE(fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
-            GROUP BY cliente, cierre_asignado
-            ORDER BY cliente, cierre_asignado
+                v.num_recibo,
+                v.cliente,
+                v.cierre_asignado,
+                SUM(v.cantidad) AS total_numeros,
+                SUM(v.total) AS total_monto
+            FROM ventas v
+            WHERE v.id_mayorista = %s
+              AND v.id_usuario = %s
+              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
+            GROUP BY v.num_recibo, v.cliente, v.cierre_asignado
+            ORDER BY v.cliente, v.cierre_asignado
         """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
 
         filas = cursor.fetchall()
         conn.close()
 
-        # 4. Formatear respuesta
+        # 4. Formatear respuesta incluyendo num_recibo
         resultado = []
-        for cliente, cierre, total_numeros, total_monto in filas:
+        for num_recibo, cliente, cierre, total_numeros, total_monto in filas:
             resultado.append({
+                "num_recibo": num_recibo,
                 "cliente": cliente,
                 "cierre": cierre,
                 "total_numeros": int(total_numeros),

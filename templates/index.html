@@ -217,7 +217,7 @@
                 const hoy = new Date();
                 const fechaLocal = hoy.toISOString().split('T')[0];
                 document.getElementById('fechaSelect').value = fechaLocal;  
-                
+
             } else {
                 document.getElementById('loginMsg').innerText = '❌ ' + data.detail;
             }
@@ -332,8 +332,9 @@
             }
         }
 
-        async function cargarRecibo() {
-            const numRecibo = document.getElementById('reciboReferencia').value;
+        async function cargarRecibo(numReciboParam = null) {
+            // Si recibimos el número como parámetro, lo usamos; si no, leemos del input
+            const numRecibo = numReciboParam || document.getElementById('reciboReferencia').value;
             if (!numRecibo) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Ingrese un número de recibo</span>';
                 return;
@@ -388,8 +389,9 @@
             }
         }
 
-        async function reimprimirRecibo() {
-            const numRecibo = document.getElementById('reciboReferencia').value;
+        async function reimprimirRecibo(numReciboParam = null) {
+            // Si recibimos el número como parámetro, lo usamos; si no, leemos del input
+            const numRecibo = numReciboParam || document.getElementById('reciboReferencia').value;
             if (!numRecibo) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Ingrese un número de recibo para reimprimir</span>';
                 return;
@@ -434,7 +436,7 @@
             } catch (error) {
                 document.getElementById('resultMsg').innerHTML = `<span class="error">❌ Error de conexión al reimprimir</span>`;
             }
-        }        
+        }
 
         function toggleNumber(num, btn) {
             // Si el número ya está seleccionado, lo desmarcamos
@@ -791,13 +793,17 @@
                             <td style="padding: 8px;">${item.cierre}</td>
                             <td style="padding: 8px; text-align: center;">${item.total_numeros}</td>
                             <td style="padding: 8px; text-align: right;">L. ${item.total_monto.toFixed(2)}</td>
+                            <td style="padding: 8px; text-align: center; white-space: nowrap;">
+                                <button onclick="cargarRecibo(${item.num_recibo})" style="background: #ffaa00; color: black; border: none; border-radius: 4px; padding: 2px 8px; cursor: pointer; margin-right: 4px;">📂 Cargar</button>
+                                <button onclick="reimprimirRecibo(${item.num_recibo})" style="background: #2196f3; color: white; border: none; border-radius: 4px; padding: 2px 8px; cursor: pointer;">🖨️ Reimprimir</button>
+                            </td>
                         </tr>
                     `;
                 });
 
                 html += `
                     <tr style="background: #00a86b; font-weight: bold;">
-                        <td colspan="3" style="padding: 8px; text-align: right;">TOTAL GENERAL</td>
+                        <td colspan="4" style="padding: 8px; text-align: right;">TOTAL GENERAL</td>
                         <td style="padding: 8px; text-align: right;">L. ${totalGeneral.toFixed(2)}</td>
                     </tr>
                 `;
@@ -892,6 +898,7 @@
                             <th style="padding: 8px; text-align: left;">Cierre</th>
                             <th style="padding: 8px; text-align: center;">Números</th>
                             <th style="padding: 8px; text-align: right;">Total L.</th>
+                            <th style="padding: 8px; text-align: center;">Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="reporteTableBody">
