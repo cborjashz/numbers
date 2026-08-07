@@ -965,6 +965,15 @@
         };
 
         async function cargarDashboard() {
+            async function cargarDashboard() {
+                console.log("🚀 Entrando a cargarDashboard()");
+                document.getElementById('dashboardUser').innerText = '👤 ' + currentUser;
+                console.log("✅ Usuario mostrado en dashboard");
+                await cargarEstadisticas();
+                console.log("✅ Estadísticas cargadas");
+                await cargarVendedores();
+                console.log("✅ Vendedores cargados");
+            }
             document.getElementById('dashboardUser').innerText = '👤 ' + currentUser;
             await cargarEstadisticas();
             await cargarVendedores();
