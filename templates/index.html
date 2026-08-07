@@ -98,6 +98,73 @@
                 </div>
             </div>
 
+            <!-- DASHBOARD (solo para mayoristas) -->
+            <div id="dashboardBox" class="game-box" style="display: none;">
+                <div style="display:flex; justify-content:space-between;">
+                    <span id="dashboardUser" style="font-weight:bold;"></span>
+                    <button class="logout" onclick="logout()" style="width:auto; padding:5px 15px;">Salir</button>
+                </div>
+
+                <h2 style="text-align:center;">📊 Panel de Control</h2>
+
+                <!-- Tarjetas de resumen -->
+                <div style="display:flex; gap:15px; margin-bottom:20px; flex-wrap:wrap;">
+                    <div style="flex:1; background:#3b3b5c; padding:15px; border-radius:10px; min-width:120px; text-align:center;">
+                        <div style="font-size:12px; color:#aaa;">Total Ventas</div>
+                        <div id="estadisticas-total" style="font-size:24px; font-weight:bold;">L. 0.00</div>
+                    </div>
+                    <div style="flex:1; background:#3b3b5c; padding:15px; border-radius:10px; min-width:120px; text-align:center;">
+                        <div style="font-size:12px; color:#aaa;">Vendedores</div>
+                        <div id="estadisticas-vendedores" style="font-size:24px; font-weight:bold;">0</div>
+                    </div>
+                    <div style="flex:1; background:#3b3b5c; padding:15px; border-radius:10px; min-width:120px; text-align:center;">
+                        <div style="font-size:12px; color:#aaa;">Ventas Hoy</div>
+                        <div id="estadisticas-hoy" style="font-size:24px; font-weight:bold;">L. 0.00</div>
+                    </div>
+                </div>
+
+                <!-- Gráficos -->
+                <div style="display:flex; gap:20px; margin-bottom:20px; flex-wrap:wrap;">
+                    <div style="flex:1; background:#3b3b5c; padding:15px; border-radius:10px; min-width:250px;">
+                        <h4 style="margin:0 0 10px 0;">📈 Ventas por Vendedor</h4>
+                        <div id="grafico-barras" style="height:150px; display:flex; align-items:flex-end; gap:8px; justify-content:center; padding:10px 0;"></div>
+                    </div>
+                    <div style="flex:1; background:#3b3b5c; padding:15px; border-radius:10px; min-width:250px;">
+                        <h4 style="margin:0 0 10px 0;">🥧 Ventas por Cierre</h4>
+                        <div id="grafico-pastel" style="height:150px; display:flex; align-items:center; justify-content:center; gap:10px; padding:10px 0; flex-wrap:wrap;"></div>
+                    </div>
+                </div>
+
+                <!-- Gestión de Vendedores -->
+                <h3 style="margin-top:20px;">👥 Mis Vendedores</h3>
+                <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
+                    <input type="text" id="nuevoNombre" placeholder="Nombre" style="flex:1; min-width:80px;">
+                    <input type="text" id="nuevoUsuario" placeholder="Usuario" style="flex:1; min-width:80px;">
+                    <input type="password" id="nuevoPass" placeholder="Contraseña" style="flex:1; min-width:80px;">
+                    <input type="number" id="nuevoLimite" placeholder="Límite venta L." step="0.01" style="flex:1; min-width:80px;">
+                    <button onclick="crearVendedor()" style="width:auto; padding:8px 15px; background:#00a86b;">➕ Crear</button>
+                </div>
+
+                <div style="overflow-x:auto;">
+                    <table style="width:100%; border-collapse:collapse; font-size:14px;">
+                        <thead style="background:#3b3b5c;">
+                            <tr>
+                                <th style="padding:6px; text-align:left;">Usuario</th>
+                                <th style="padding:6px; text-align:left;">Nombre</th>
+                                <th style="padding:6px; text-align:center;">Límite</th>
+                                <th style="padding:6px; text-align:center;">Sesiones</th>
+                                <th style="padding:6px; text-align:center;">Expira</th>
+                                <th style="padding:6px; text-align:center;">Activo</th>
+                                <th style="padding:6px; text-align:center;">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaVendedores">
+                            <tr><td colspan="7" style="text-align:center; padding:20px; color:#aaa;">Cargando vendedores...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Cargar recibo de referencia -->
             <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
                 <input type="number" id="reciboReferencia" placeholder="Recibo de referencia" style="flex: 1;">
@@ -205,21 +272,31 @@
                 // Guardar datos en el navegador
                 currentUser = data.usuario;
                 currentToken = data.token;
+                const rol = data.rol;
                 localStorage.setItem('loteria_token', data.token);
                 localStorage.setItem('loteria_usuario', data.usuario);
+                localStorage.setItem('loteria_rol', rol);
 
                 document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
-                document.getElementById('loginBox').classList.remove('active');
-                document.getElementById('gameBox').classList.add('active');
-                cargarOpciones();
-                generarTablero();
-                // Establecer fecha actual por defecto en el selector
-                const hoy = new Date();
-                const fechaLocal = hoy.toISOString().split('T')[0];
-                document.getElementById('fechaSelect').value = fechaLocal;  
 
-            } else {
-                document.getElementById('loginMsg').innerText = '❌ ' + data.detail;
+                // Redirigir según el rol
+                if (rol === 'mayorista') {
+                    // Mostrar Dashboard, ocultar PDV
+                    document.getElementById('loginBox').classList.remove('active');
+                    document.getElementById('gameBox').classList.remove('active');
+                    document.getElementById('dashboardBox').classList.add('active');
+                    cargarDashboard();
+                } else {
+                    // Mostrar PDV, ocultar Dashboard
+                    document.getElementById('loginBox').classList.remove('active');
+                    document.getElementById('dashboardBox').classList.remove('active');
+                    document.getElementById('gameBox').classList.add('active');
+                    cargarOpciones();
+                    generarTablero();
+                    const hoy = new Date();
+                    const fechaLocal = hoy.toISOString().split('T')[0];
+                    document.getElementById('fechaSelect').value = fechaLocal;
+                }
             }
         }
 
@@ -227,7 +304,6 @@
             const token = localStorage.getItem('loteria_token');
             if (token) {
                 try {
-                    // Enviar petición al backend para cerrar la sesión
                     await fetch(API + '/logout', {
                         method: 'POST',
                         headers: {
@@ -236,19 +312,19 @@
                         }
                     });
                 } catch (error) {
-                    // Si falla la red, igual limpiamos localmente
                     console.error('Error al cerrar sesión en el servidor:', error);
                 }
             }
 
-            // Limpiar localStorage y variables
             localStorage.removeItem('loteria_token');
             localStorage.removeItem('loteria_usuario');
+            localStorage.removeItem('loteria_rol');
             currentUser = null;
             currentToken = null;
             selectedNumbers = [];
             
             document.getElementById('gameBox').classList.remove('active');
+            document.getElementById('dashboardBox').classList.remove('active');
             document.getElementById('loginBox').classList.add('active');
             document.getElementById('loginMsg').innerText = '';
             document.getElementById('loginUser').value = '';
@@ -861,20 +937,192 @@
             }
         }                
 
-        // Verificar si ya hay una sesión guardada al cargar la página
         window.onload = function() {
             const savedToken = localStorage.getItem('loteria_token');
             const savedUser = localStorage.getItem('loteria_usuario');
-            if (savedToken && savedUser) {
+            const savedRol = localStorage.getItem('loteria_rol');
+            if (savedToken && savedUser && savedRol) {
                 currentToken = savedToken;
                 currentUser = savedUser;
                 document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
-                document.getElementById('loginBox').classList.remove('active');
-                document.getElementById('gameBox').classList.add('active');
-                cargarOpciones();
-                generarTablero();
+
+                if (savedRol === 'mayorista') {
+                    document.getElementById('loginBox').classList.remove('active');
+                    document.getElementById('gameBox').classList.remove('active');
+                    document.getElementById('dashboardBox').classList.add('active');
+                    cargarDashboard();
+                } else {
+                    document.getElementById('loginBox').classList.remove('active');
+                    document.getElementById('dashboardBox').classList.remove('active');
+                    document.getElementById('gameBox').classList.add('active');
+                    cargarOpciones();
+                    generarTablero();
+                    const hoy = new Date();
+                    const fechaLocal = hoy.toISOString().split('T')[0];
+                    document.getElementById('fechaSelect').value = fechaLocal;
+                }
             }
         };
+
+        async function cargarDashboard() {
+            document.getElementById('dashboardUser').innerText = '👤 ' + currentUser;
+            await cargarEstadisticas();
+            await cargarVendedores();
+        }
+
+        async function cargarEstadisticas() {
+            const token = localStorage.getItem('loteria_token');
+            if (!token) return;
+
+            const res = await fetch(API + '/dashboard/estadisticas', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+
+            document.getElementById('estadisticas-total').innerText = `L. ${data.total_ventas.toFixed(2)}`;
+            document.getElementById('estadisticas-vendedores').innerText = data.total_vendedores;
+            document.getElementById('estadisticas-hoy').innerText = `L. ${data.ventas_hoy.toFixed(2)}`;
+
+            // Gráfico de barras (ventas por vendedor)
+            const barrasDiv = document.getElementById('grafico-barras');
+            barrasDiv.innerHTML = '';
+            if (data.ventas_por_vendedor && data.ventas_por_vendedor.length > 0) {
+                const max = Math.max(...data.ventas_por_vendedor.map(v => v.total), 1);
+                data.ventas_por_vendedor.forEach(v => {
+                    const barra = document.createElement('div');
+                    const altura = Math.max((v.total / max) * 120, 10);
+                    barra.style.cssText = `width:30px; height:${altura}px; background:#00a86b; border-radius:4px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; font-size:10px; padding-bottom:2px;`;
+                    barra.innerHTML = `<span style="color:#fff;">${v.total.toFixed(0)}</span><span style="font-size:9px; color:#aaa; margin-top:2px;">${v.nombre}</span>`;
+                    barrasDiv.appendChild(barra);
+                });
+            } else {
+                barrasDiv.innerHTML = '<div style="color:#aaa;">Sin datos</div>';
+            }
+
+            // Gráfico de pastel (ventas por cierre)
+            const pastelDiv = document.getElementById('grafico-pastel');
+            pastelDiv.innerHTML = '';
+            if (data.ventas_por_cierre && data.ventas_por_cierre.length > 0) {
+                const colores = ['#ffaa00', '#2196f3', '#e74c3c', '#9b59b6'];
+                data.ventas_por_cierre.forEach((c, idx) => {
+                    const item = document.createElement('div');
+                    item.style.cssText = `display:flex; align-items:center; gap:6px; font-size:12px;`;
+                    item.innerHTML = `<span style="display:inline-block; width:14px; height:14px; border-radius:50%; background:${colores[idx % colores.length]};"></span> ${c.cierre}: L.${c.total.toFixed(2)}`;
+                    pastelDiv.appendChild(item);
+                });
+            } else {
+                pastelDiv.innerHTML = '<div style="color:#aaa;">Sin datos</div>';
+            }
+        }
+
+        async function cargarVendedores() {
+            const token = localStorage.getItem('loteria_token');
+            if (!token) return;
+
+            const res = await fetch(API + '/dashboard/vendedores', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (!res.ok) return;
+            const vendedores = await res.json();
+
+            const tbody = document.getElementById('tablaVendedores');
+            tbody.innerHTML = '';
+            if (vendedores.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#aaa;">No hay vendedores registrados</td></tr>';
+                return;
+            }
+            vendedores.forEach(v => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid #3b3b5c';
+                tr.innerHTML = `
+                    <td style="padding:6px;">${v.usuario}</td>
+                    <td style="padding:6px;">${v.nombre}</td>
+                    <td style="padding:6px; text-align:center;">L. ${v.limite_venta.toFixed(2)}</td>
+                    <td style="padding:6px; text-align:center;">${v.max_sesiones}</td>
+                    <td style="padding:6px; text-align:center;">${v.fecha_expiracion ? new Date(v.fecha_expiracion).toLocaleDateString() : 'N/A'}</td>
+                    <td style="padding:6px; text-align:center;">${v.activo ? '✅' : '❌'}</td>
+                    <td style="padding:6px; text-align:center;">
+                        <button onclick="editarVendedor(${v.id_usuario})" style="background:#f39c12; color:black; border:none; border-radius:4px; padding:2px 8px; cursor:pointer; margin-right:4px;">✏️</button>
+                        <button onclick="desactivarVendedor(${v.id_usuario})" style="background:#d32f2f; color:white; border:none; border-radius:4px; padding:2px 8px; cursor:pointer;">${v.activo ? '🚫' : '✅'}</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function crearVendedor() {
+            const nombre = document.getElementById('nuevoNombre').value;
+            const usuario = document.getElementById('nuevoUsuario').value;
+            const pass = document.getElementById('nuevoPass').value;
+            const limite = parseFloat(document.getElementById('nuevoLimite').value);
+
+            if (!nombre || !usuario || !pass || isNaN(limite) || limite <= 0) {
+                alert('❌ Complete todos los campos correctamente.');
+                return;
+            }
+
+            const token = localStorage.getItem('loteria_token');
+            const res = await fetch(API + '/dashboard/vendedores', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ nombre, usuario, password: pass, limite_venta: limite })
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                alert('❌ ' + data.detail);
+                return;
+            }
+            alert('✅ Vendedor creado exitosamente.');
+            document.getElementById('nuevoNombre').value = '';
+            document.getElementById('nuevoUsuario').value = '';
+            document.getElementById('nuevoPass').value = '';
+            document.getElementById('nuevoLimite').value = '';
+            await cargarVendedores();
+        }
+
+        async function editarVendedor(id) {
+            const maxSesiones = prompt('Nuevo límite de sesiones:');
+            if (maxSesiones === null) return;
+            const fechaExp = prompt('Nueva fecha de expiración (YYYY-MM-DD) o dejar vacío:');
+            const token = localStorage.getItem('loteria_token');
+            const res = await fetch(API + '/dashboard/vendedores/' + id, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    max_sesiones: parseInt(maxSesiones) || 1,
+                    fecha_expiracion: fechaExp || null
+                })
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                alert('❌ ' + data.detail);
+                return;
+            }
+            alert('✅ Vendedor actualizado.');
+            await cargarVendedores();
+        }
+
+        async function desactivarVendedor(id) {
+            if (!confirm('¿Está seguro de cambiar el estado de este vendedor?')) return;
+            const token = localStorage.getItem('loteria_token');
+            const res = await fetch(API + '/dashboard/vendedores/' + id, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                alert('❌ ' + data.detail);
+                return;
+            }
+            await cargarVendedores();
+        }        
 
     </script>
     <!-- MODAL DE REPORTE -->
