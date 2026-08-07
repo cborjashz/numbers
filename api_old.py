@@ -27,8 +27,7 @@ class LoginRequest(BaseModel):
 class VentaRequest(BaseModel):
     nombre_vendedor: str
     cliente: str
-    numeros: list[str]
-    precio_unitario: float
+    items: list[dict]  # Lista de objetos {"numero": "05", "precio": 10.0}
     cierre_elegido: str | None = None
 
 # ===== LÓGICA DE CIERRES =====
@@ -42,7 +41,15 @@ def calcular_cierre(hora_venta: int) -> str:
     else:
         return "Cierre 1 (11am - Día siguiente)"
 
-def generar_recibo_pdf(num_recibo: int, fecha_emision: str, cliente: str, numeros: list, precio_unitario: float, total: float, cierre: str, vendedor: str) -> io.BytesIO:
+def generar_recibo_pdf(
+    num_recibo: int, 
+    fecha_emision: str, 
+    cliente: str, 
+    agrupado: dict[float, list[str]],  # {precio: [numeros]}
+    total: float, 
+    cierre: str, 
+    vendedor: str
+) -> io.BytesIO:
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
@@ -80,17 +87,25 @@ def generar_recibo_pdf(num_recibo: int, fecha_emision: str, cliente: str, numero
     c.setLineWidth(1)
     c.line(50, height - 200, width - 50, height - 200)
 
-    # === NÚMEROS JUGADOS ===
-    c.setFont("Helvetica-Bold", 20)
-    filas = [numeros[i:i+6] for i in range(0, len(numeros), 6)]
-    y_pos_numeros = height - 250
-    for fila in filas:
-        texto_fila = ", ".join(fila)
-        c.drawCentredString(width / 2, y_pos_numeros, texto_fila)
-        y_pos_numeros -= 35
+    # === NÚMEROS JUGADOS (AGRUPADOS POR PRECIO) ===
+    y = height - 240
+    c.setFont("Helvetica-Bold", 12)
+
+    # Ordenar los precios de mayor a menor
+    precios_ordenados = sorted(agrupado.keys(), reverse=True)
+
+    for precio in precios_ordenados:
+        numeros = agrupado[precio]
+        texto_numeros = ", ".join(numeros)
+        
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, y, f"Números a L. {precio:.2f}:")
+        c.setFont("Helvetica", 12)
+        c.drawString(180, y, texto_numeros)
+        y -= 25
 
     # === CIERRE Y PIE ===
-    y_pos_cierre = y_pos_numeros + 15
+    y_pos_cierre = y + 15
     c.setFont("Helvetica-Bold", 16)
     c.drawString(50, y_pos_cierre, cierre)
 
@@ -109,8 +124,7 @@ def generar_recibo_pdf(num_recibo: int, fecha_emision: str, cliente: str, numero
     c.drawRightString(width - 50, y_pos_total, f"{total:.2f}")
 
     c.setFont("Helvetica", 12)
-    c.drawString(50, y_pos_total + 25, f"Cantidad: {len(numeros)}")
-    c.drawRightString(width - 50, y_pos_total + 25, f"Precio: L. {precio_unitario:.2f}")
+    c.drawString(50, y_pos_total + 25, f"Cantidad de números: {sum(len(v) for v in agrupado.values())}")
 
     c.save()
     buffer.seek(0)
@@ -282,15 +296,14 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
     token = authorization.replace("Bearer ", "")
     id_usuario, nombre_vendedor = await validar_token(token)
 
-    # (Opcional: podrías usar el nombre_vendedor del token en lugar del que viene en el body)
-    # Forzamos a que el vendedor sea el del token para seguridad
     venta.nombre_vendedor = nombre_vendedor
 
     conn = None
     try:
         # === VALIDACIÓN DE PRECIO NEGATIVO ===
-        if venta.precio_unitario <= 0:
-            raise HTTPException(status_code=400, detail="El precio unitario debe ser mayor a 0")
+        for item in venta.items:
+            if item["precio"] <= 0:
+                raise HTTPException(status_code=400, detail="Todos los precios deben ser mayores a 0")
 
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         conn.autocommit = False
@@ -300,44 +313,44 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
-        # 2. Determinar el cierre (elegido por el usuario o automático)
+        # 1. Determinar el cierre
         if venta.cierre_elegido:
-            # Validar que el cierre elegido sea uno de los válidos
             cierres_validos = ["Cierre 1 (11am)", "Cierre 2 (3pm)", "Cierre 3 (9pm)"]
             if venta.cierre_elegido not in cierres_validos:
                 raise HTTPException(status_code=400, detail="Cierre elegido no válido")
-
-            # --- VALIDACIÓN DE NO PERMITIR CIERRES YA PASADOS ---
-            # Mapeamos cada cierre a su hora límite (hora en que empieza el siguiente)
-            # Si son las 11:00 AM, ya no se puede elegir "Cierre 1"
-            # Si son las 3:00 PM, ya no se puede elegir "Cierre 2"
-            # Si son las 9:00 PM, ya no se puede elegir "Cierre 3"
             hora_actual = ahora.hour
-
             if venta.cierre_elegido == "Cierre 1 (11am)" and hora_actual >= 11:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="El Cierre 1 (11am) ya pasó. Elija el cierre actual o uno futuro."
-                )
+                raise HTTPException(status_code=400, detail="El Cierre 1 (11am) ya pasó.")
             elif venta.cierre_elegido == "Cierre 2 (3pm)" and hora_actual >= 15:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="El Cierre 2 (3pm) ya pasó. Elija el cierre actual o uno futuro."
-                )
+                raise HTTPException(status_code=400, detail="El Cierre 2 (3pm) ya pasó.")
             elif venta.cierre_elegido == "Cierre 3 (9pm)" and hora_actual >= 21:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="El Cierre 3 (9pm) ya pasó. Elija el cierre actual o uno futuro."
-                )
-            # ------------------------------------------------
-
+                raise HTTPException(status_code=400, detail="El Cierre 3 (9pm) ya pasó.")
             cierre = venta.cierre_elegido
         else:
             cierre = calcular_cierre(ahora.hour)
 
-        total = venta.precio_unitario * len(venta.numeros)
+        # 2. Agrupar los items por precio
+        grupos = {}
+        for item in venta.items:
+            precio = item["precio"]
+            numero = item["numero"]
+            if precio not in grupos:
+                grupos[precio] = []
+            grupos[precio].append(numero)
 
-        # 1. Obtener límite de venta Y EL MAYORISTA del usuario
+        # 3. Construir el detalle JSON (fuente de verdad)
+        detalle_venta = []
+        for precio, numeros in grupos.items():
+            detalle_venta.append({
+                "precio": precio,
+                "numeros": numeros
+            })
+        detalle_json = json.dumps(detalle_venta)
+
+        # 4. Calcular total
+        total = sum(item["precio"] for item in venta.items)
+
+        # 5. Obtener límite de venta y mayorista
         cursor.execute(
             "SELECT limite_venta, id_mayorista FROM usuarios WHERE id_usuario = %s",
             (id_usuario,)
@@ -346,50 +359,57 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         if not resultado:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         limite_venta = resultado[0]
-        id_mayorista = resultado[1]  # <--- OBTENEMOS EL ID DEL MAYORISTA
+        id_mayorista = resultado[1]
 
-        if limite_venta is not None and venta.precio_unitario > limite_venta:
+        # Validar límite por número (usamos el precio más alto de la venta)
+        precio_maximo = max(item["precio"] for item in venta.items)
+        if limite_venta is not None and precio_maximo > limite_venta:
             raise HTTPException(
                 status_code=400,
-                detail=f"El precio por número (L. {venta.precio_unitario}) supera el límite permitido de L. {limite_venta}"
+                detail=f"El precio máximo (L. {precio_maximo}) supera el límite permitido de L. {limite_venta}"
             )
 
-        # 2. Generar numero de recibo
+        # 6. Generar número de recibo
         num_recibo = int(f"{(int(ahora.timestamp() * 1000) % 10000000)}{random.randint(100, 999)}")
 
-        # 3. Convertir la lista de números a JSONB
-        numeros_json = json.dumps(venta.numeros)
+        # 7. Preparar datos para la BD
+        # - numero_jugado: lista plana de números (para cumplir NOT NULL)
+        # - precio_unitario: valor del primer precio (NO se usa, solo para NOT NULL)
+        # - detalle_venta: detalle agrupado por precio (fuente de verdad)
+        numeros_planos = [item["numero"] for item in venta.items]
+        numeros_json = json.dumps(numeros_planos)
+        primer_precio = venta.items[0]["precio"] if venta.items else 0
 
-        # 4. Insertar UN SOLO registro con el array JSON (AHORA INCLUYENDO id_mayorista)
+        # 8. Guardar en la BD
         sql_insert = """
             INSERT INTO ventas (
-                num_recibo, id_usuario, cliente, numero_jugado, 
-                precio_unitario, cantidad, total, cierre_asignado, fecha_hora,
-                id_mayorista
+                num_recibo, id_usuario, cliente, fecha_hora,
+                cierre_asignado, id_mayorista, total,
+                numero_jugado, precio_unitario, detalle_venta
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(sql_insert, (
             num_recibo,
             id_usuario,
             venta.cliente,
-            numeros_json,
-            venta.precio_unitario,
-            len(venta.numeros),
-            total,
-            cierre,
             ahora,
-            id_mayorista  # <--- VALOR DEL MAYORISTA
+            cierre,
+            id_mayorista,
+            total,
+            numeros_json,        # <--- LISTA PLANA DE NÚMEROS
+            primer_precio,       # <--- PRIMER PRECIO (solo para NOT NULL)
+            detalle_json         # <--- DETALLE AGRUPADO (fuente de verdad)
         ))
 
         conn.commit()
 
+        # 8. Generar PDF usando el diccionario agrupado
         fecha_str = ahora.strftime("%d-%m-%Y %H:%M:%S")
         pdf_buffer = generar_recibo_pdf(
             num_recibo=num_recibo,
             fecha_emision=fecha_str,
             cliente=venta.cliente,
-            numeros=venta.numeros,
-            precio_unitario=venta.precio_unitario,
+            agrupado=grupos,
             total=total,
             cierre=cierre,
             vendedor=venta.nombre_vendedor
@@ -424,7 +444,7 @@ async def obtener_recibo(num_recibo: int, authorization: str = Header(None)):
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
         cursor.execute("""
-            SELECT cliente, precio_unitario, numero_jugado
+            SELECT detalle_venta
             FROM ventas
             WHERE num_recibo = %s
         """, (num_recibo,))
@@ -433,95 +453,23 @@ async def obtener_recibo(num_recibo: int, authorization: str = Header(None)):
         if not resultado:
             raise HTTPException(status_code=404, detail="Recibo no encontrado")
 
-        cliente = resultado[0]
-        precio_unitario = resultado[1]
-        numeros_json = resultado[2]
+        detalle_venta_json = resultado[0]
+        if not detalle_venta_json:
+            raise HTTPException(status_code=400, detail="El recibo no tiene detalle de precios")
 
-        if isinstance(numeros_json, str):
-            numeros = json.loads(numeros_json)
-        else:
-            numeros = numeros_json
-
+        grupos = json.loads(detalle_venta_json)
         conn.close()
+
+        # Formato para el frontend: lista de objetos {numero, precio} para llenar la tabla
+        items = []
+        for grupo in grupos:
+            precio = grupo["precio"]
+            for numero in grupo["numeros"]:
+                items.append({"numero": numero, "precio": precio})
 
         return {
-            "cliente": cliente,
-            "precio_unitario": precio_unitario,
-            "numeros": numeros
+            "items": items
         }
-
-    except Exception as e:
-        if conn:
-            conn.close()
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/reimprimir/{num_recibo}")
-async def reimprimir_recibo(num_recibo: int, authorization: str = Header(None)):
-    # Validar token
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Token no proporcionado")
-    token = authorization.replace("Bearer ", "")
-    _, _ = await validar_token(token)
-
-    conn = None
-    try:
-        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-        cursor = conn.cursor()
-        cursor.execute("SET TIMEZONE = 'America/Managua'")
-
-        cursor.execute("""
-            SELECT 
-                v.cliente,
-                v.precio_unitario,
-                v.numero_jugado,
-                v.fecha_hora,
-                v.cierre_asignado,
-                u.nombre_usuario
-            FROM ventas v
-            JOIN usuarios u ON v.id_usuario = u.id_usuario
-            WHERE v.num_recibo = %s
-            LIMIT 1
-        """, (num_recibo,))
-
-        resultado = cursor.fetchone()
-        if not resultado:
-            raise HTTPException(status_code=404, detail="Recibo no encontrado para reimprimir")
-
-        cliente = resultado[0]
-        precio_unitario = resultado[1]
-        numeros_json = resultado[2]
-        fecha_hora = resultado[3]
-        cierre = resultado[4]
-        nombre_vendedor = resultado[5]
-
-        if isinstance(numeros_json, str):
-            numeros = json.loads(numeros_json)
-        else:
-            numeros = numeros_json
-
-        total = precio_unitario * len(numeros)
-        fecha_str = fecha_hora.strftime("%d-%m-%Y %H:%M:%S")
-
-        conn.close()
-
-        pdf_buffer = generar_recibo_pdf(
-            num_recibo=num_recibo,
-            fecha_emision=fecha_str,
-            cliente=cliente,
-            numeros=numeros,
-            precio_unitario=precio_unitario,
-            total=total,
-            cierre=cierre,
-            vendedor=nombre_vendedor
-        )
-
-        return StreamingResponse(
-            pdf_buffer,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename=recibo_{num_recibo}.pdf"}
-        )
 
     except Exception as e:
         if conn:
@@ -569,7 +517,11 @@ async def logout(authorization: str = Header(None)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/tablero-estado")
-async def tablero_estado(authorization: str = Header(None)):
+async def tablero_estado(
+    authorization: str = Header(None),
+    fecha: str = None,
+    cierre: str = None
+):
     # Validar token
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
@@ -591,25 +543,36 @@ async def tablero_estado(authorization: str = Header(None)):
 
         id_mayorista = resultado[0]
 
-        # 2. Obtener la hora actual y calcular el cierre
+        # 2. Determinar fecha y cierre (usando zona Managua)
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
-        cierre_actual = calcular_cierre(ahora.hour)
-        fecha_actual = ahora.date()
 
-        # 3. Consulta SQL CORREGIDA: filtra por fecha, cierre, mayorista Y VENDEDOR
+        # Si no se envió fecha, usar hoy
+        if fecha:
+            fecha_consulta = datetime.strptime(fecha, "%Y-%m-%d").date()
+        else:
+            fecha_consulta = ahora.date()
+
+        # Si no se envió cierre, calcular automático
+        if cierre:
+            cierre_consulta = cierre
+        else:
+            cierre_consulta = calcular_cierre(ahora.hour)
+
+        # 3. Consulta SQL usando los filtros dinámicos
         cursor.execute("""
             SELECT 
                 num_individual AS numero,
-                SUM(v.precio_unitario) AS monto_total
+                SUM((detalle->>'precio')::numeric) AS monto_total
             FROM ventas v,
-            LATERAL jsonb_array_elements_text(v.numero_jugado) AS num_individual
+            LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+            LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
             WHERE v.cierre_asignado = %s
               AND v.id_mayorista = %s
               AND v.id_usuario = %s
               AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
             GROUP BY num_individual
-        """, (cierre_actual, id_mayorista, id_usuario, fecha_actual))
+        """, (cierre_consulta, id_mayorista, id_usuario, fecha_consulta))
 
         filas = cursor.fetchall()
         conn.close()
@@ -668,28 +631,30 @@ async def reporte_ventas_cliente(
         else:
             fecha_fin_dt = hoy
 
-        # 3. Consulta SQL: Agrupar por cliente y cierre
+        # 3. Consulta SQL: Agregamos num_recibo al SELECT y al GROUP BY
         cursor.execute("""
             SELECT 
-                cliente,
-                cierre_asignado,
-                SUM(cantidad) AS total_numeros,
-                SUM(total) AS total_monto
-            FROM ventas
-            WHERE id_mayorista = %s
-              AND id_usuario = %s
-              AND DATE(fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
-            GROUP BY cliente, cierre_asignado
-            ORDER BY cliente, cierre_asignado
+                v.num_recibo,
+                v.cliente,
+                v.cierre_asignado,
+                SUM(v.cantidad) AS total_numeros,
+                SUM(v.total) AS total_monto
+            FROM ventas v
+            WHERE v.id_mayorista = %s
+              AND v.id_usuario = %s
+              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
+            GROUP BY v.num_recibo, v.cliente, v.cierre_asignado
+            ORDER BY v.cliente, v.cierre_asignado
         """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
 
         filas = cursor.fetchall()
         conn.close()
 
-        # 4. Formatear respuesta
+        # 4. Formatear respuesta incluyendo num_recibo
         resultado = []
-        for cliente, cierre, total_numeros, total_monto in filas:
+        for num_recibo, cliente, cierre, total_numeros, total_monto in filas:
             resultado.append({
+                "num_recibo": num_recibo,
                 "cliente": cliente,
                 "cierre": cierre,
                 "total_numeros": int(total_numeros),

@@ -127,15 +127,54 @@
                 <input type="number" id="precioInput" placeholder="Precio L." step="0.01">
             </div>
 
-            <!-- Selector de cierre -->
-            <div style="display: flex; gap: 10px; margin: 10px 0; align-items: center;">
-                <label for="cierreSelect" style="font-size: 14px; font-weight: bold;">Cierre:</label>
-                <select id="cierreSelect" style="width: auto; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
+            <!-- Selectores de fecha y cierre (misma fila) -->
+            <div style="display: flex; gap: 10px; margin: 10px 0; align-items: center; flex-wrap: wrap;">
+                <label for="fechaSelect" style="font-size: 14px; font-weight: bold;">📅 Fecha:</label>
+                <input type="date" id="fechaSelect" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 120px;">
+                
+                <label for="cierreSelect" style="font-size: 14px; font-weight: bold;">🕒 Cierre:</label>
+                <select id="cierreSelect" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 120px;">
                     <option value="">Automático (según hora)</option>
                     <option value="Cierre 1 (11am)">Cierre 1 (11am)</option>
                     <option value="Cierre 2 (3pm)">Cierre 2 (3pm)</option>
                     <option value="Cierre 3 (9pm)">Cierre 3 (9pm)</option>
                 </select>
+            </div>
+
+            <!-- MODAL DE PRECIO POR NÚMERO -->
+            <div id="precioModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+                <div style="background: #2d2d44; padding: 20px; border-radius: 15px; width: 90%; max-width: 400px; color: white;">
+                    <h3 style="margin-top: 0;">💲 Asignar Precio</h3>
+                    <p style="font-size: 16px;">Número seleccionado: <strong id="modalNumero" style="color: #ffd700;"></strong></p>
+                    <div style="margin: 15px 0;">
+                        <label style="font-size: 14px;">Precio (L.):</label>
+                        <input type="number" id="modalPrecio" step="0.01" min="0.01" style="width: 100%; padding: 10px; background: #3b3b5c; color: white; border: none; border-radius: 5px; font-size: 16px;">
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button onclick="cerrarModalPrecio()" style="background: #555; color: white; border: none; border-radius: 5px; padding: 10px 20px; cursor: pointer;">Cancelar</button>
+                        <button onclick="agregarNumeroConPrecio()" style="background: #00a86b; color: white; border: none; border-radius: 5px; padding: 10px 20px; cursor: pointer;">✅ Agregar</button>
+                    </div>
+                </div>
+            </div>
+            
+             <!-- Tabla resumen de números seleccionados con precio -->
+            <div id="resumenContainer" style="margin: 15px 0; border: 1px solid #3b3b5c; border-radius: 8px; padding: 10px; display: none;">
+                <h4 style="margin: 0 0 10px 0;">📋 Resumen de selección</h4>
+                <table id="resumenTable" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                    <thead style="background: #3b3b5c;">
+                        <tr>
+                            <th style="padding: 6px; text-align: left;">Número</th>
+                            <th style="padding: 6px; text-align: left;">Precio (L.)</th>
+                            <th style="padding: 6px; text-align: center;">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resumenTableBody">
+                        <!-- Filas dinámicas -->
+                    </tbody>
+                </table>
+                <div style="text-align: right; margin-top: 10px; font-weight: bold;">
+                    Total: <span id="resumenTotal">L. 0.00</span>
+                </div>
             </div>
 
             <button onclick="vender()">🟢 VENDER</button>
@@ -174,6 +213,11 @@
                 document.getElementById('gameBox').classList.add('active');
                 cargarOpciones();
                 generarTablero();
+                // Establecer fecha actual por defecto en el selector
+                const hoy = new Date();
+                const fechaLocal = hoy.toISOString().split('T')[0];
+                document.getElementById('fechaSelect').value = fechaLocal;  
+
             } else {
                 document.getElementById('loginMsg').innerText = '❌ ' + data.detail;
             }
@@ -235,26 +279,38 @@
             actualizarMontosTablero();
         }
 
+      
+
         async function actualizarMontosTablero() {
             const token = localStorage.getItem('loteria_token');
             if (!token) return; // Si no hay token, no hacemos nada
 
+            // Leer valores de los selectores
+            const fecha = document.getElementById('fechaSelect').value;
+            const cierre = document.getElementById('cierreSelect').value;
+
+            // Construir la URL con los parámetros
+            let url = API + '/tablero-estado';
+            const params = [];
+            if (fecha) params.push(`fecha=${fecha}`);
+            if (cierre) params.push(`cierre=${encodeURIComponent(cierre)}`);
+            if (params.length > 0) url += '?' + params.join('&');
+
             try {
-                const res = await fetch(API + '/tablero-estado', {
+                const res = await fetch(url, {
                     headers: {
                         'Authorization': 'Bearer ' + token
                     }
                 });
                 if (!res.ok) {
                     if (res.status === 401) {
-                        // Si el token expiró, cerramos sesión
                         logout();
                         return;
                     }
-                    return; // Si hay otro error, simplemente no actualizamos
+                    return;
                 }
 
-                const datos = await res.json(); // Ej: {"00": 350.0, "05": 1200.0}
+                const datos = await res.json();
 
                 // Recorrer todos los botones (00 al 99) y actualizar el monto
                 for (let i = 0; i < 100; i++) {
@@ -263,9 +319,8 @@
                     if (montoDiv) {
                         const monto = datos[num];
                         if (monto && monto > 0) {
-                            // Formatear con separador de miles y 2 decimales
                             montoDiv.innerText = `L. ${monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                            montoDiv.style.color = '#ffd700'; // Dorado
+                            montoDiv.style.color = '#ffd700';
                         } else {
                             montoDiv.innerText = '';
                             montoDiv.style.color = '#ffd700';
@@ -277,8 +332,9 @@
             }
         }
 
-        async function cargarRecibo() {
-            const numRecibo = document.getElementById('reciboReferencia').value;
+        async function cargarRecibo(numReciboParam = null) {
+            // Si recibimos el número como parámetro, lo usamos; si no, leemos del input
+            const numRecibo = numReciboParam || document.getElementById('reciboReferencia').value;
             if (!numRecibo) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Ingrese un número de recibo</span>';
                 return;
@@ -310,27 +366,32 @@
         
                 const data = await res.json();
         
-                document.getElementById('clienteInput').value = data.cliente;
-                document.getElementById('precioInput').value = data.precio_unitario;
-        
-                // NO limpiar la selección previa. Solo agregar los números del recibo.
-                data.numeros.forEach(num => {
+                // Limpiar selección previa y tabla resumen
+                limpiarSeleccion();
+
+                // Agregar los números con sus precios a la tabla resumen y al tablero
+                data.items.forEach(item => {
+                    const num = item.numero;
+                    const precio = item.precio;
                     const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
                     if (btn && !btn.classList.contains('selected')) {
                         btn.classList.add('selected');
                         selectedNumbers.push(num);
+                        // Agregar a la tabla resumen con su precio
+                        agregarAResumen(num, precio);
                     }
                 });
         
-                document.getElementById('resultMsg').innerHTML = `<span class="success">✅ Recibo ${numRecibo} cargado! ${data.numeros.length} números seleccionados.</span>`;
+                document.getElementById('resultMsg').innerHTML = `<span class="success">✅ Recibo ${numRecibo} cargado! ${data.items.length} números con sus precios.</span>`;
         
             } catch (error) {
                 document.getElementById('resultMsg').innerHTML = `<span class="error">❌ Error de conexión</span>`;
             }
         }
 
-        async function reimprimirRecibo() {
-            const numRecibo = document.getElementById('reciboReferencia').value;
+        async function reimprimirRecibo(numReciboParam = null) {
+            // Si recibimos el número como parámetro, lo usamos; si no, leemos del input
+            const numRecibo = numReciboParam || document.getElementById('reciboReferencia').value;
             if (!numRecibo) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Ingrese un número de recibo para reimprimir</span>';
                 return;
@@ -375,17 +436,133 @@
             } catch (error) {
                 document.getElementById('resultMsg').innerHTML = `<span class="error">❌ Error de conexión al reimprimir</span>`;
             }
-        }        
+        }
 
         function toggleNumber(num, btn) {
-            const idx = selectedNumbers.indexOf(num);
-            if (idx > -1) {
-                selectedNumbers.splice(idx, 1);
+            // Si el número ya está seleccionado, lo desmarcamos
+            if (btn.classList.contains('selected')) {
                 btn.classList.remove('selected');
-            } else {
-                selectedNumbers.push(num);
-                btn.classList.add('selected');
+                const idx = selectedNumbers.indexOf(num);
+                if (idx > -1) {
+                    selectedNumbers.splice(idx, 1);
+                }
+                // También lo eliminamos de la tabla resumen si estaba ahí
+                eliminarDeResumen(num);
+                return;
             }
+
+            // Si no está seleccionado, abrimos el modal para pedir el precio
+            abrirModalPrecio(num, btn);
+        }
+
+        let pendingNumber = null;
+        let pendingButton = null;
+
+        function abrirModalPrecio(num, btn) {
+            pendingNumber = num;
+            pendingButton = btn;
+            document.getElementById('modalNumero').innerText = num;
+            document.getElementById('modalPrecio').value = '';
+            document.getElementById('modalPrecio').focus();
+            document.getElementById('precioModal').style.display = 'flex';
+        }
+
+        function cerrarModalPrecio() {
+            document.getElementById('precioModal').style.display = 'none';
+            pendingNumber = null;
+            pendingButton = null;
+        }
+
+        function agregarNumeroConPrecio() {
+            const precio = parseFloat(document.getElementById('modalPrecio').value);
+            if (!precio || precio <= 0) {
+                alert('❌ Ingrese un precio válido mayor a 0');
+                return;
+            }
+
+            // Caso 1: Es una opción rápida (hay números pendientes en pendingQuickNumbers)
+            if (pendingQuickNumbers && pendingQuickNumbers.length > 0) {
+                pendingQuickNumbers.forEach(num => {
+                    // Buscar el botón del número en el tablero
+                    const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
+                    if (btn && !btn.classList.contains('selected')) {
+                        btn.classList.add('selected');
+                        selectedNumbers.push(num);
+                        // Agregar a la tabla resumen
+                        agregarAResumen(num, precio);
+                    }
+                });
+                // Limpiar la variable temporal
+                pendingQuickNumbers = [];
+                cerrarModalPrecio();
+                actualizarMontosTablero();
+                return;
+            }
+
+            // Caso 2: Es un número individual (pendingNumber y pendingButton están definidos)
+            if (pendingNumber && pendingButton) {
+                pendingButton.classList.add('selected');
+                selectedNumbers.push(pendingNumber);
+                agregarAResumen(pendingNumber, precio);
+                cerrarModalPrecio();
+                actualizarMontosTablero();
+                return;
+            }
+
+            // Si no hay ni pendingNumber ni pendingQuickNumbers, no hacer nada
+            alert('❌ No hay números seleccionados para asignar precio.');
+        }
+
+        function agregarAResumen(num, precio) {
+            const tbody = document.getElementById('resumenTableBody');
+            const row = document.createElement('tr');
+            row.id = `resumen-${num}`;
+            row.innerHTML = `
+                <td style="padding: 6px;">${num}</td>
+                <td style="padding: 6px;">L. ${precio.toFixed(2)}</td>
+                <td style="padding: 6px; text-align: center;">
+                    <button onclick="eliminarDeResumen('${num}')" style="background: #d32f2f; color: white; border: none; border-radius: 4px; padding: 2px 8px; cursor: pointer;">🗑️</button>
+                </td>
+            `;
+            tbody.appendChild(row);
+
+            // Mostrar el contenedor si estaba oculto
+            document.getElementById('resumenContainer').style.display = 'block';
+            actualizarTotalResumen();
+        }
+
+        function eliminarDeResumen(num) {
+            const row = document.getElementById(`resumen-${num}`);
+            if (row) {
+                row.remove();
+                // Desmarcar del tablero
+                const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
+                if (btn) {
+                    btn.classList.remove('selected');
+                }
+                const idx = selectedNumbers.indexOf(num);
+                if (idx > -1) {
+                    selectedNumbers.splice(idx, 1);
+                }
+                actualizarTotalResumen();
+                // Ocultar el contenedor si ya no hay filas
+                if (document.getElementById('resumenTableBody').children.length === 0) {
+                    document.getElementById('resumenContainer').style.display = 'none';
+                }
+            }
+        }
+
+        function actualizarTotalResumen() {
+            const rows = document.getElementById('resumenTableBody').children;
+            let total = 0;
+            for (let row of rows) {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 2) {
+                    const precioText = cells[1].innerText.replace('L. ', '');
+                    total += parseFloat(precioText);
+                }
+            }
+            document.getElementById('resumenTotal').innerText = `L. ${total.toFixed(2)}`;
         }
 
         async function cargarOpciones() {
@@ -443,43 +620,66 @@
                 // this.value = '';
             };
 
+            // Agregar eventos para actualizar automáticamente al cambiar fecha o cierre
+            document.getElementById('fechaSelect').onchange = function() {
+                actualizarMontosTablero();
+            };
+            document.getElementById('cierreSelect').onchange = function() {
+                actualizarMontosTablero();
+            };            
+
         }
 
         function limpiarSeleccion() {
             document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
             selectedNumbers = [];
             document.getElementById('resultMsg').innerHTML = '';
+            // Limpiar tabla resumen
+            document.getElementById('resumenTableBody').innerHTML = '';
+            document.getElementById('resumenContainer').style.display = 'none';
+            document.getElementById('resumenTotal').innerText = 'L. 0.00';
         }
+
+        // Variable temporal para guardar los números de la opción rápida
+        let pendingQuickNumbers = [];
 
         function seleccionarOpcion(numerosStr) {
             if (!numerosStr) return; // Si no hay valor, no hacer nada
 
-            // NO limpiar la selección previa. Solo agregar los nuevos números.
-            const nums = numerosStr.split(',');
-            nums.forEach(n => {
-                const btn = document.querySelector(`.num-btn[data-num="${n}"]`);
-                if (btn && !btn.classList.contains('selected')) {
-                    btn.classList.add('selected');
-                    selectedNumbers.push(n);
-                }
-            });
+            // Dividir la cadena y guardar los números en la variable temporal
+            pendingQuickNumbers = numerosStr.split(',');
+
+            // Abrir el modal de precio con un mensaje especial
+            document.getElementById('modalNumero').innerText = `Opción rápida (${pendingQuickNumbers.length} números)`;
+            document.getElementById('modalPrecio').value = '';
+            document.getElementById('modalPrecio').focus();
+            document.getElementById('precioModal').style.display = 'flex';
         }
 
         async function vender() {
             const cliente = document.getElementById('clienteInput').value;
-            const precio = document.getElementById('precioInput').value;
             const cierreElegido = document.getElementById('cierreSelect').value;
 
-            if (parseFloat(precio) <= 0) {
-                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ El precio debe ser mayor a 0</span>';
+            // Obtener los items de la tabla resumen
+            const rows = document.getElementById('resumenTableBody').children;
+            if (rows.length === 0) {
+                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ No hay números seleccionados con precio. Seleccione números y asigne precio.</span>';
                 return;
             }
-            if (!cliente || !precio) {
-                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Complete Cliente y Precio</span>';
-                return;
+
+            const items = [];
+            for (let row of rows) {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 2) {
+                    const numero = cells[0].innerText.trim();
+                    const precioText = cells[1].innerText.replace('L. ', '');
+                    const precio = parseFloat(precioText);
+                    items.push({ numero, precio });
+                }
             }
-            if (selectedNumbers.length === 0) {
-                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Seleccione al menos un número</span>';
+
+            if (!cliente) {
+                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Complete el nombre del Cliente</span>';
                 return;
             }
 
@@ -499,8 +699,7 @@
                 body: JSON.stringify({
                     nombre_vendedor: currentUser,
                     cliente: cliente,
-                    numeros: selectedNumbers,
-                    precio_unitario: parseFloat(precio),
+                    items: items,
                     cierre_elegido: cierreElegido || null 
                 })
             });
@@ -518,13 +717,11 @@
                 
                 document.getElementById('resultMsg').innerHTML = '<span class="success">✅ Venta exitosa! El recibo se ha descargado.</span>';
                 
-                document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
-                selectedNumbers = [];
+                // Limpiar todo
+                limpiarSeleccion();
                 document.getElementById('clienteInput').value = '';
-                document.getElementById('precioInput').value = '';
-                // === AGREGAR ESTA LÍNEA ===
-                actualizarMontosTablero();  // Actualizar los montos después de la venta
-
+                document.getElementById('cierreSelect').value = '';
+                actualizarMontosTablero();
             } else {
                 if (res.status === 401) {
                     document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
@@ -532,10 +729,8 @@
                     return;
                 }
                 const data = await res.json();
-                document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;            
+                document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
             }
-
-
         }
 
         function abrirReporte() {
@@ -598,13 +793,17 @@
                             <td style="padding: 8px;">${item.cierre}</td>
                             <td style="padding: 8px; text-align: center;">${item.total_numeros}</td>
                             <td style="padding: 8px; text-align: right;">L. ${item.total_monto.toFixed(2)}</td>
+                            <td style="padding: 8px; text-align: center; white-space: nowrap;">
+                                <button onclick="cargarRecibo(${item.num_recibo})" style="background: #ffaa00; color: black; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; margin-right: 4px; font-size: 14px;">📂</button>
+                                <button onclick="reimprimirRecibo(${item.num_recibo})" style="background: #2196f3; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 14px;">🖨️</button>
+                            </td>
                         </tr>
                     `;
                 });
 
                 html += `
                     <tr style="background: #00a86b; font-weight: bold;">
-                        <td colspan="3" style="padding: 8px; text-align: right;">TOTAL GENERAL</td>
+                        <td colspan="4" style="padding: 8px; text-align: right;">TOTAL GENERAL</td>
                         <td style="padding: 8px; text-align: right;">L. ${totalGeneral.toFixed(2)}</td>
                     </tr>
                 `;
@@ -680,7 +879,7 @@
     </script>
     <!-- MODAL DE REPORTE -->
     <div id="reporteModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
-        <div style="background: #2d2d44; padding: 20px; border-radius: 15px; width: 90%; max-width: 700px; max-height: 80vh; overflow-y: auto; color: white;">
+        <div style="background: #2d2d44; padding: 20px; border-radius: 15px; width: 90%; max-width: 1200px; max-height: 100vh; overflow-y: auto; color: white;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
                 <h2 style="margin: 0;">📊 Reporte de Ventas por Cliente</h2>
                 <button onclick="cerrarReporte()" style="background: #d32f2f; color: white; border: none; border-radius: 5px; padding: 5px 15px; cursor: pointer;">✕ Cerrar</button>
@@ -699,6 +898,7 @@
                             <th style="padding: 8px; text-align: left;">Cierre</th>
                             <th style="padding: 8px; text-align: center;">Números</th>
                             <th style="padding: 8px; text-align: right;">Total L.</th>
+                            <th style="padding: 8px; text-align: center;">Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="reporteTableBody">
