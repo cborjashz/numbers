@@ -91,6 +91,7 @@
         <div id="gameBox" class="game-box">
             <div style="display:flex; justify-content:space-between;">
                 <span id="userDisplay" style="font-weight:bold;"></span>
+                <button id="btnDashboard" onclick="window.location.href='/dashboard'" style="display:none; width:auto; padding:5px 10px; background:#f39c12; color:black; font-size:14px; border:none; border-radius:5px; cursor:pointer; margin-right:8px;">📊</button>
                 <button class="logout" onclick="logout()" style="width:auto; padding:5px 15px;">Salir</button>
                 <!-- Botón para abrir reporte -->
                 <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
@@ -202,24 +203,30 @@
             });
             const data = await res.json();
             if (res.ok) {
-                // Guardar datos en el navegador
                 currentUser = data.usuario;
                 currentToken = data.token;
+                const rol = data.rol;
                 localStorage.setItem('loteria_token', data.token);
                 localStorage.setItem('loteria_usuario', data.usuario);
+                localStorage.setItem('loteria_rol', rol);
 
                 document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
+
+                // Mostrar ícono de dashboard si es mayorista
+                const btnDashboard = document.getElementById('btnDashboard');
+                if (rol === 'mayorista') {
+                    btnDashboard.style.display = 'inline-block';
+                } else {
+                    btnDashboard.style.display = 'none';
+                }
+
                 document.getElementById('loginBox').classList.remove('active');
                 document.getElementById('gameBox').classList.add('active');
                 cargarOpciones();
                 generarTablero();
-                // Establecer fecha actual por defecto en el selector
                 const hoy = new Date();
                 const fechaLocal = hoy.toISOString().split('T')[0];
-                document.getElementById('fechaSelect').value = fechaLocal;  
-
-            } else {
-                document.getElementById('loginMsg').innerText = '❌ ' + data.detail;
+                document.getElementById('fechaSelect').value = fechaLocal;
             }
         }
 
@@ -865,14 +872,26 @@
         window.onload = function() {
             const savedToken = localStorage.getItem('loteria_token');
             const savedUser = localStorage.getItem('loteria_usuario');
-            if (savedToken && savedUser) {
+            const savedRol = localStorage.getItem('loteria_rol');
+            if (savedToken && savedUser && savedRol) {
                 currentToken = savedToken;
                 currentUser = savedUser;
                 document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
+
+                const btnDashboard = document.getElementById('btnDashboard');
+                if (savedRol === 'mayorista') {
+                    btnDashboard.style.display = 'inline-block';
+                } else {
+                    btnDashboard.style.display = 'none';
+                }
+
                 document.getElementById('loginBox').classList.remove('active');
                 document.getElementById('gameBox').classList.add('active');
                 cargarOpciones();
                 generarTablero();
+                const hoy = new Date();
+                const fechaLocal = hoy.toISOString().split('T')[0];
+                document.getElementById('fechaSelect').value = fechaLocal;
             }
         };
 

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Control - Mayorista</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1e1e2e; color: white; margin: 0; padding: 20px; min-height: 100vh; display: flex; justify-content: center; }
+        .container { background: #2d2d44; padding: 30px; border-radius: 15px; width: 100%; max-width: 1000px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        h1, h2, h3, h4 { text-align: center; margin-bottom: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header h1 { margin: 0; }
+        button { padding: 10px 20px; border: none; border-radius: 8px; background: #00a86b; color: white; font-size: 16px; font-weight: bold; cursor: pointer; }
+        button:hover { background: #008f5a; }
+        .logout { background: #555; }
+        .logout:hover { background: #777; }
+        .cards { display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 20px; }
+        .card { flex: 1; background: #3b3b5c; padding: 15px; border-radius: 10px; min-width: 120px; text-align: center; }
+        .card div:first-child { font-size: 12px; color: #aaa; }
+        .card div:last-child { font-size: 24px; font-weight: bold; }
+        .charts { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+        .chart-box { flex: 1; background: #3b3b5c; padding: 15px; border-radius: 10px; min-width: 250px; }
+        .chart-box h4 { margin: 0 0 10px 0; }
+        .bar-chart { height: 150px; display: flex; align-items: flex-end; gap: 8px; justify-content: center; padding: 10px 0; }
+        .pie-chart { height: 150px; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; }
+        th { background: #3b3b5c; padding: 6px; text-align: left; }
+        td { padding: 6px; border-bottom: 1px solid #3b3b5c; }
+        .form-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+        .form-row input { flex: 1; min-width: 80px; padding: 10px; background: #3b3b5c; color: white; border: none; border-radius: 8px; font-size: 14px; }
+        .btn-crear { width: auto; padding: 10px 20px; background: #00a86b; }
+        .icon-btn { background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px; }
+        .icon-btn:hover { opacity: 0.8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Panel de Control</h1>
+            <div>
+                <span id="dashboardUser" style="font-weight:bold; margin-right:15px;"></span>
+                <button class="logout" onclick="logout()">Salir</button>
+            </div>
+        </div>
+
+        <!-- Tarjetas de resumen -->
+        <div class="cards">
+            <div class="card">
+                <div>Total Ventas</div>
+                <div id="estadisticas-total">L. 0.00</div>
+            </div>
+            <div class="card">
+                <div>Vendedores</div>
+                <div id="estadisticas-vendedores">0</div>
+            </div>
+            <div class="card">
+                <div>Ventas Hoy</div>
+                <div id="estadisticas-hoy">L. 0.00</div>
+            </div>
+        </div>
+
+        <!-- Gráficos -->
+        <div class="charts">
+            <div class="chart-box">
+                <h4>📈 Ventas por Vendedor</h4>
+                <div class="bar-chart" id="grafico-barras"></div>
+            </div>
+            <div class="chart-box">
+                <h4>🥧 Ventas por Cierre</h4>
+                <div class="pie-chart" id="grafico-pastel"></div>
+            </div>
+        </div>
+
+        <!-- Gestión de Vendedores -->
+        <h3>👥 Mis Vendedores</h3>
+        <div class="form-row">
+            <input type="text" id="nuevoNombre" placeholder="Nombre">
+            <input type="text" id="nuevoUsuario" placeholder="Usuario">
+            <input type="password" id="nuevoPass" placeholder="Contraseña">
+            <input type="number" id="nuevoLimite" placeholder="Límite venta L." step="0.01">
+            <button class="btn-crear" onclick="crearVendedor()">➕ Crear</button>
+        </div>
+
+        <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Nombre</th>
+                        <th>Límite</th>
+                        <th>Sesiones</th>
+                        <th>Expira</th>
+                        <th>Activo</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="tablaVendedores">
+                    <tr><td colspan="7" style="text-align:center; padding:20px; color:#aaa;">Cargando vendedores...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API = '/api';
+
+        async function logout() {
+            const token = localStorage.getItem('loteria_token');
+            if (token) {
+                try {
+                    await fetch(API + '/logout', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + token,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                } catch (e) { console.error(e); }
+            }
+            localStorage.clear();
+            window.location.href = '/';
+        }
+
+        function cargarDashboard() {
+            const user = localStorage.getItem('loteria_usuario');
+            document.getElementById('dashboardUser').innerText = '👤 ' + user;
+            cargarEstadisticas();
+            cargarVendedores();
+        }
+
+        async function cargarEstadisticas() {
+            const token = localStorage.getItem('loteria_token');
+            if (!token) return;
+
+            const res = await fetch(API + '/dashboard/estadisticas', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+
+            document.getElementById('estadisticas-total').innerText = 'L. ' + data.total_ventas.toFixed(2);
+            document.getElementById('estadisticas-vendedores').innerText = data.total_vendedores;
+            document.getElementById('estadisticas-hoy').innerText = 'L. ' + data.ventas_hoy.toFixed(2);
+
+            // Barras
+            const barrasDiv = document.getElementById('grafico-barras');
+            barrasDiv.innerHTML = '';
+            if (data.ventas_por_vendedor && data.ventas_por_vendedor.length > 0) {
+                const max = Math.max(...data.ventas_por_vendedor.map(v => v.total), 1);
+                data.ventas_por_vendedor.forEach(v => {
+                    const barra = document.createElement('div');
+                    const altura = Math.max((v.total / max) * 120, 10);
+                    barra.style.cssText = `width:30px; height:${altura}px; background:#00a86b; border-radius:4px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; font-size:10px; padding-bottom:2px;`;
+                    barra.innerHTML = `<span style="color:#fff;">${v.total.toFixed(0)}</span><span style="font-size:9px; color:#aaa; margin-top:2px;">${v.nombre}</span>`;
+                    barrasDiv.appendChild(barra);
+                });
+            } else {
+                barrasDiv.innerHTML = '<div style="color:#aaa;">Sin datos</div>';
+            }
+
+            // Pastel
+            const pastelDiv = document.getElementById('grafico-pastel');
+            pastelDiv.innerHTML = '';
+            if (data.ventas_por_cierre && data.ventas_por_cierre.length > 0) {
+                const colores = ['#ffaa00', '#2196f3', '#e74c3c', '#9b59b6'];
+                data.ventas_por_cierre.forEach((c, idx) => {
+                    const item = document.createElement('div');
+                    item.style.cssText = `display:flex; align-items:center; gap:6px; font-size:12px;`;
+                    item.innerHTML = `<span style="display:inline-block; width:14px; height:14px; border-radius:50%; background:${colores[idx % colores.length]};"></span> ${c.cierre}: L.${c.total.toFixed(2)}`;
+                    pastelDiv.appendChild(item);
+                });
+            } else {
+                pastelDiv.innerHTML = '<div style="color:#aaa;">Sin datos</div>';
+            }
+        }
+
+        async function cargarVendedores() {
+            const token = localStorage.getItem('loteria_token');
+            if (!token) return;
+
+            const res = await fetch(API + '/dashboard/vendedores', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (!res.ok) return;
+            const vendedores = await res.json();
+
+            const tbody = document.getElementById('tablaVendedores');
+            tbody.innerHTML = '';
+            if (vendedores.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#aaa;">No hay vendedores registrados</td></tr>';
+                return;
+            }
+            vendedores.forEach(v => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${v.usuario}</td>
+                    <td>${v.nombre}</td>
+                    <td style="text-align:center;">L. ${v.limite_venta.toFixed(2)}</td>
+                    <td style="text-align:center;">${v.max_sesiones}</td>
+                    <td style="text-align:center;">${v.fecha_expiracion ? new Date(v.fecha_expiracion).toLocaleDateString() : 'N/A'}</td>
+                    <td style="text-align:center;">${v.activo ? '✅' : '❌'}</td>
+                    <td style="text-align:center;">
+                        <button class="icon-btn" onclick="editarVendedor(${v.id_usuario})">✏️</button>
+                        <button class="icon-btn" onclick="desactivarVendedor(${v.id_usuario})">${v.activo ? '🚫' : '✅'}</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function crearVendedor() {
+            const nombre = document.getElementById('nuevoNombre').value;
+            const usuario = document.getElementById('nuevoUsuario').value;
+            const pass = document.getElementById('nuevoPass').value;
+            const limite = parseFloat(document.getElementById('nuevoLimite').value);
+
+            if (!nombre || !usuario || !pass || isNaN(limite) || limite <= 0) {
+                alert('❌ Complete todos los campos correctamente.');
+                return;
+            }
+
+            const token = localStorage.getItem('loteria_token');
+            const res = await fetch(API + '/dashboard/vendedores', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({ nombre, usuario, password: pass, limite_venta: limite })
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                alert('❌ ' + data.detail);
+                return;
+            }
+            alert('✅ Vendedor creado exitosamente.');
+            document.getElementById('nuevoNombre').value = '';
+            document.getElementById('nuevoUsuario').value = '';
+            document.getElementById('nuevoPass').value = '';
+            document.getElementById('nuevoLimite').value = '';
+            cargarVendedores();
+        }
+
+        async function editarVendedor(id) {
+            const maxSesiones = prompt('Nuevo límite de sesiones:');
+            if (maxSesiones === null) return;
+            const fechaExp = prompt('Nueva fecha de expiración (YYYY-MM-DD) o dejar vacío:');
+            const token = localStorage.getItem('loteria_token');
+            const res = await fetch(API + '/dashboard/vendedores/' + id, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify({
+                    max_sesiones: parseInt(maxSesiones) || 1,
+                    fecha_expiracion: fechaExp || null
+                })
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                alert('❌ ' + data.detail);
+                return;
+            }
+            alert('✅ Vendedor actualizado.');
+            cargarVendedores();
+        }
+
+        async function desactivarVendedor(id) {
+            if (!confirm('¿Está seguro de cambiar el estado de este vendedor?')) return;
+            const token = localStorage.getItem('loteria_token');
+            const res = await fetch(API + '/dashboard/vendedores/' + id, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                alert('❌ ' + data.detail);
+                return;
+            }
+            cargarVendedores();
+        }
+
+        // Cargar al iniciar
+        cargarDashboard();
+    </script>
+</body>
+</html>

@@ -135,6 +135,10 @@ def generar_recibo_pdf(
 async def read_root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    return templates.TemplateResponse(request=request, name="dashboard.html")
+
 # ===== FUNCIÓN AUXILIAR PARA VALIDAR TOKEN =====
 async def validar_token(token: str):
     """
