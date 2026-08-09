@@ -457,7 +457,12 @@ async def obtener_recibo(num_recibo: int, authorization: str = Header(None)):
         if not detalle_venta_json:
             raise HTTPException(status_code=400, detail="El recibo no tiene detalle de precios")
 
-        grupos = json.loads(detalle_venta_json)
+        # Verificar si psycopg2 ya parseó el JSONB a list/dict o si viene como str
+        if isinstance(detalle_venta_json, str):
+            grupos = json.loads(detalle_venta_json)
+        else:
+            grupos = detalle_venta_json
+
         conn.close()
 
         # Formato para el frontend: lista de objetos {numero, precio} para llenar la tabla
