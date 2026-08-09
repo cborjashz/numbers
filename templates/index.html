@@ -91,7 +91,6 @@
         <div id="gameBox" class="game-box">
             <div style="display:flex; justify-content:space-between;">
                 <span id="userDisplay" style="font-weight:bold;"></span>
-                <button id="btnDashboard" onclick="window.location.href='/dashboard'" style="display:none; width:auto; padding:5px 10px; background:#f39c12; color:black; font-size:14px; border:none; border-radius:5px; cursor:pointer; margin-right:8px;">📊</button>
                 <button class="logout" onclick="logout()" style="width:auto; padding:5px 15px;">Salir</button>
                 <!-- Botón para abrir reporte -->
                 <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
@@ -205,21 +204,10 @@
             if (res.ok) {
                 currentUser = data.usuario;
                 currentToken = data.token;
-                const rol = data.rol;
                 localStorage.setItem('loteria_token', data.token);
                 localStorage.setItem('loteria_usuario', data.usuario);
-                localStorage.setItem('loteria_rol', rol);
 
                 document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
-
-                // Mostrar ícono de dashboard si es mayorista
-                const btnDashboard = document.getElementById('btnDashboard');
-                if (rol === 'mayorista') {
-                    btnDashboard.style.display = 'inline-block';
-                } else {
-                    btnDashboard.style.display = 'none';
-                }
-
                 document.getElementById('loginBox').classList.remove('active');
                 document.getElementById('gameBox').classList.add('active');
                 cargarOpciones();
@@ -227,6 +215,8 @@
                 const hoy = new Date();
                 const fechaLocal = hoy.toISOString().split('T')[0];
                 document.getElementById('fechaSelect').value = fechaLocal;
+            } else {
+                document.getElementById('loginMsg').innerText = '❌ ' + data.detail;
             }
         }
 
@@ -234,7 +224,6 @@
             const token = localStorage.getItem('loteria_token');
             if (token) {
                 try {
-                    // Enviar petición al backend para cerrar la sesión
                     await fetch(API + '/logout', {
                         method: 'POST',
                         headers: {
@@ -243,12 +232,10 @@
                         }
                     });
                 } catch (error) {
-                    // Si falla la red, igual limpiamos localmente
                     console.error('Error al cerrar sesión en el servidor:', error);
                 }
             }
 
-            // Limpiar localStorage y variables
             localStorage.removeItem('loteria_token');
             localStorage.removeItem('loteria_usuario');
             currentUser = null;
@@ -286,17 +273,13 @@
             actualizarMontosTablero();
         }
 
-      
-
         async function actualizarMontosTablero() {
             const token = localStorage.getItem('loteria_token');
-            if (!token) return; // Si no hay token, no hacemos nada
+            if (!token) return;
 
-            // Leer valores de los selectores
             const fecha = document.getElementById('fechaSelect').value;
             const cierre = document.getElementById('cierreSelect').value;
 
-            // Construir la URL con los parámetros
             let url = API + '/tablero-estado';
             const params = [];
             if (fecha) params.push(`fecha=${fecha}`);
@@ -319,7 +302,6 @@
 
                 const datos = await res.json();
 
-                // Recorrer todos los botones (00 al 99) y actualizar el monto
                 for (let i = 0; i < 100; i++) {
                     const num = i.toString().padStart(2, '0');
                     const montoDiv = document.getElementById(`monto-${num}`);
@@ -340,7 +322,6 @@
         }
 
         async function cargarRecibo(numReciboParam = null) {
-            // Si recibimos el número como parámetro, lo usamos; si no, leemos del input
             const numRecibo = numReciboParam || document.getElementById('reciboReferencia').value;
             if (!numRecibo) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Ingrese un número de recibo</span>';
@@ -373,10 +354,8 @@
         
                 const data = await res.json();
         
-                // Limpiar selección previa y tabla resumen
                 limpiarSeleccion();
 
-                // Agregar los números con sus precios a la tabla resumen y al tablero
                 data.items.forEach(item => {
                     const num = item.numero;
                     const precio = item.precio;
@@ -384,7 +363,6 @@
                     if (btn && !btn.classList.contains('selected')) {
                         btn.classList.add('selected');
                         selectedNumbers.push(num);
-                        // Agregar a la tabla resumen con su precio
                         agregarAResumen(num, precio);
                     }
                 });
@@ -397,7 +375,6 @@
         }
 
         async function reimprimirRecibo(numReciboParam = null) {
-            // Si recibimos el número como parámetro, lo usamos; si no, leemos del input
             const numRecibo = numReciboParam || document.getElementById('reciboReferencia').value;
             if (!numRecibo) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Ingrese un número de recibo para reimprimir</span>';
@@ -446,19 +423,16 @@
         }
 
         function toggleNumber(num, btn) {
-            // Si el número ya está seleccionado, lo desmarcamos
             if (btn.classList.contains('selected')) {
                 btn.classList.remove('selected');
                 const idx = selectedNumbers.indexOf(num);
                 if (idx > -1) {
                     selectedNumbers.splice(idx, 1);
                 }
-                // También lo eliminamos de la tabla resumen si estaba ahí
                 eliminarDeResumen(num);
                 return;
             }
 
-            // Si no está seleccionado, abrimos el modal para pedir el precio
             abrirModalPrecio(num, btn);
         }
 
@@ -487,26 +461,21 @@
                 return;
             }
 
-            // Caso 1: Es una opción rápida (hay números pendientes en pendingQuickNumbers)
             if (pendingQuickNumbers && pendingQuickNumbers.length > 0) {
                 pendingQuickNumbers.forEach(num => {
-                    // Buscar el botón del número en el tablero
                     const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
                     if (btn && !btn.classList.contains('selected')) {
                         btn.classList.add('selected');
                         selectedNumbers.push(num);
-                        // Agregar a la tabla resumen
                         agregarAResumen(num, precio);
                     }
                 });
-                // Limpiar la variable temporal
                 pendingQuickNumbers = [];
                 cerrarModalPrecio();
                 actualizarMontosTablero();
                 return;
             }
 
-            // Caso 2: Es un número individual (pendingNumber y pendingButton están definidos)
             if (pendingNumber && pendingButton) {
                 pendingButton.classList.add('selected');
                 selectedNumbers.push(pendingNumber);
@@ -516,7 +485,6 @@
                 return;
             }
 
-            // Si no hay ni pendingNumber ni pendingQuickNumbers, no hacer nada
             alert('❌ No hay números seleccionados para asignar precio.');
         }
 
@@ -533,7 +501,6 @@
             `;
             tbody.appendChild(row);
 
-            // Mostrar el contenedor si estaba oculto
             document.getElementById('resumenContainer').style.display = 'block';
             actualizarTotalResumen();
         }
@@ -542,7 +509,6 @@
             const row = document.getElementById(`resumen-${num}`);
             if (row) {
                 row.remove();
-                // Desmarcar del tablero
                 const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
                 if (btn) {
                     btn.classList.remove('selected');
@@ -552,7 +518,6 @@
                     selectedNumbers.splice(idx, 1);
                 }
                 actualizarTotalResumen();
-                // Ocultar el contenedor si ya no hay filas
                 if (document.getElementById('resumenTableBody').children.length === 0) {
                     document.getElementById('resumenContainer').style.display = 'none';
                 }
@@ -574,7 +539,6 @@
 
         async function cargarOpciones() {
             const select = document.getElementById('opcionesSelect');
-            // Limpiar opciones previas (pero mantener la primera)
             while (select.options.length > 1) {
                 select.remove(1);
             }
@@ -604,7 +568,6 @@
             const opciones = await res.json();
             
             if (opciones.length === 0) {
-                // Si no hay opciones, agregamos una opción informativa
                 const opt = document.createElement('option');
                 opt.value = '';
                 opt.textContent = 'No hay opciones rápidas configuradas';
@@ -620,43 +583,34 @@
                 select.appendChild(opt);
             });
 
-            // Agregar evento para cuando el usuario seleccione una opción
             select.onchange = function() {
                 seleccionarOpcion(this.value);
-                // Opcional: resetear el combobox después de seleccionar (para poder elegir otra)
-                // this.value = '';
             };
 
-            // Agregar eventos para actualizar automáticamente al cambiar fecha o cierre
             document.getElementById('fechaSelect').onchange = function() {
                 actualizarMontosTablero();
             };
             document.getElementById('cierreSelect').onchange = function() {
                 actualizarMontosTablero();
             };            
-
         }
 
         function limpiarSeleccion() {
             document.querySelectorAll('.num-btn').forEach(b => b.classList.remove('selected'));
             selectedNumbers = [];
             document.getElementById('resultMsg').innerHTML = '';
-            // Limpiar tabla resumen
             document.getElementById('resumenTableBody').innerHTML = '';
             document.getElementById('resumenContainer').style.display = 'none';
             document.getElementById('resumenTotal').innerText = 'L. 0.00';
         }
 
-        // Variable temporal para guardar los números de la opción rápida
         let pendingQuickNumbers = [];
 
         function seleccionarOpcion(numerosStr) {
-            if (!numerosStr) return; // Si no hay valor, no hacer nada
+            if (!numerosStr) return;
 
-            // Dividir la cadena y guardar los números en la variable temporal
             pendingQuickNumbers = numerosStr.split(',');
 
-            // Abrir el modal de precio con un mensaje especial
             document.getElementById('modalNumero').innerText = `Opción rápida (${pendingQuickNumbers.length} números)`;
             document.getElementById('modalPrecio').value = '';
             document.getElementById('modalPrecio').focus();
@@ -667,7 +621,6 @@
             const cliente = document.getElementById('clienteInput').value;
             const cierreElegido = document.getElementById('cierreSelect').value;
 
-            // Obtener los items de la tabla resumen
             const rows = document.getElementById('resumenTableBody').children;
             if (rows.length === 0) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ No hay números seleccionados con precio. Seleccione números y asigne precio.</span>';
@@ -724,7 +677,6 @@
                 
                 document.getElementById('resultMsg').innerHTML = '<span class="success">✅ Venta exitosa! El recibo se ha descargado.</span>';
                 
-                // Limpiar todo
                 limpiarSeleccion();
                 document.getElementById('clienteInput').value = '';
                 document.getElementById('cierreSelect').value = '';
@@ -742,7 +694,6 @@
 
         function abrirReporte() {
             document.getElementById('reporteModal').style.display = 'flex';
-            // Establecer fechas por defecto (hoy)
             const hoy = new Date().toISOString().split('T')[0];
             document.getElementById('reporteFechaInicio').value = hoy;
             document.getElementById('reporteFechaFin').value = hoy;
@@ -852,7 +803,6 @@
                     return;
                 }
 
-                // Descargar el PDF
                 const blob = await res.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -868,30 +818,17 @@
             }
         }                
 
-        // Verificar si ya hay una sesión guardada al cargar la página
         window.onload = function() {
             const savedToken = localStorage.getItem('loteria_token');
             const savedUser = localStorage.getItem('loteria_usuario');
-            const savedRol = localStorage.getItem('loteria_rol');
-            if (savedToken && savedUser && savedRol) {
+            if (savedToken && savedUser) {
                 currentToken = savedToken;
                 currentUser = savedUser;
                 document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
-
-                const btnDashboard = document.getElementById('btnDashboard');
-                if (savedRol === 'mayorista') {
-                    btnDashboard.style.display = 'inline-block';
-                } else {
-                    btnDashboard.style.display = 'none';
-                }
-
                 document.getElementById('loginBox').classList.remove('active');
                 document.getElementById('gameBox').classList.add('active');
                 cargarOpciones();
                 generarTablero();
-                const hoy = new Date();
-                const fechaLocal = hoy.toISOString().split('T')[0];
-                document.getElementById('fechaSelect').value = fechaLocal;
             }
         };
 
