@@ -173,6 +173,7 @@ async def validar_token(token: str):
 
         # Verificar expiración del token
         if fecha_expiracion_token < ahora:
+            # Opcional: podríamos invalidar la sesión aquí
             raise HTTPException(status_code=401, detail="Token expirado")
 
         # Verificar que el usuario esté activo
@@ -200,8 +201,9 @@ async def login(data: LoginRequest):
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
+        # 1. Validar credenciales y obtener datos del usuario (INCLUIMOS id_mayorista)
         cursor.execute("""
-            SELECT id_usuario, nombre_usuario, limite_venta, fecha_expiracion, max_sesiones, activo
+            SELECT id_usuario, nombre_usuario, limite_venta, fecha_expiracion, max_sesiones, activo, id_mayorista
             FROM usuarios 
             WHERE nombre_usuario = %s AND password_hash = %s
         """, (data.usuario, data.password))
@@ -215,14 +217,18 @@ async def login(data: LoginRequest):
         fecha_expiracion = resultado[3]
         max_sesiones = resultado[4]
         activo = resultado[5]
+        id_mayorista = resultado[6]
 
+        # 2. Verificar que el usuario esté activo
         if not activo:
             raise HTTPException(status_code=401, detail="Usuario desactivado")
 
+        # 3. Verificar que la licencia no haya expirado
         ahora = datetime.now(timezone(timedelta(hours=-6)))
         if fecha_expiracion and fecha_expiracion < ahora:
             raise HTTPException(status_code=401, detail="Licencia del usuario expirada")
 
+        # 4. Contar sesiones activas y verificar límite
         cursor.execute("""
             SELECT COUNT(*) FROM sesiones_activas 
             WHERE id_usuario = %s AND activo = TRUE
@@ -234,9 +240,13 @@ async def login(data: LoginRequest):
                 detail=f"Límite de sesiones alcanzado (máximo {max_sesiones}). Cierre otra sesión o contacte al administrador."
             )
 
+        # 5. Generar token único
         token = secrets.token_hex(32)
+
+        # 6. Definir expiración del token
         expiracion_token = ahora + timedelta(hours=8)
 
+        # 7. Insertar la nueva sesión
         cursor.execute("""
             INSERT INTO sesiones_activas (id_usuario, token, fecha_expiracion)
             VALUES (%s, %s, %s)
@@ -245,11 +255,13 @@ async def login(data: LoginRequest):
         conn.commit()
         conn.close()
 
+        # 8. Devolver token, datos y AHORA TAMBIÉN id_mayorista
         return {
             "usuario": nombre_usuario,
             "limite_venta": limite_venta,
             "token": token,
-            "expiracion": expiracion_token.isoformat()
+            "expiracion": expiracion_token.isoformat(),
+            "id_mayorista": id_mayorista  # <--- NUEVO CAMPO DEVUELTO
         }
 
     except Exception as e:
@@ -262,10 +274,11 @@ async def login(data: LoginRequest):
 
 @app.get("/api/opciones")
 async def get_opciones(authorization: str = Header(None)):
+    # Validar token
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
     token = authorization.replace("Bearer ", "")
-    _, _ = await validar_token(token)
+    _, _ = await validar_token(token)  # Solo validamos, no necesitamos el usuario aquí
 
     conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     cursor = conn.cursor()
@@ -277,6 +290,7 @@ async def get_opciones(authorization: str = Header(None)):
 
 @app.post("/api/vender")
 async def vender(venta: VentaRequest, authorization: str = Header(None)):
+    # Validar token
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
     token = authorization.replace("Bearer ", "")
@@ -286,6 +300,7 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
 
     conn = None
     try:
+        # === VALIDACIÓN DE PRECIO NEGATIVO ===
         for item in venta.items:
             if item["precio"] <= 0:
                 raise HTTPException(status_code=400, detail="Todos los precios deben ser mayores a 0")
@@ -298,6 +313,7 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
+        # 1. Determinar el cierre
         if venta.cierre_elegido:
             cierres_validos = ["Cierre 1 (11am)", "Cierre 2 (3pm)", "Cierre 3 (9pm)"]
             if venta.cierre_elegido not in cierres_validos:
@@ -313,6 +329,7 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         else:
             cierre = calcular_cierre(ahora.hour)
 
+        # 2. Agrupar los items por precio
         grupos = {}
         for item in venta.items:
             precio = item["precio"]
@@ -321,6 +338,7 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
                 grupos[precio] = []
             grupos[precio].append(numero)
 
+        # 3. Construir el detalle JSON (fuente de verdad)
         detalle_venta = []
         for precio, numeros in grupos.items():
             detalle_venta.append({
@@ -329,17 +347,21 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
             })
         detalle_json = json.dumps(detalle_venta)
 
+        # 4. Calcular total
         total = sum(item["precio"] for item in venta.items)
 
+        # 5. Obtener límite de venta y mayorista
         cursor.execute(
-            "SELECT limite_venta FROM usuarios WHERE id_usuario = %s",
+            "SELECT limite_venta, id_mayorista FROM usuarios WHERE id_usuario = %s",
             (id_usuario,)
         )
         resultado = cursor.fetchone()
         if not resultado:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         limite_venta = resultado[0]
+        id_mayorista = resultado[1]
 
+        # Validar límite por número (usamos el precio más alto de la venta)
         precio_maximo = max(item["precio"] for item in venta.items)
         if limite_venta is not None and precio_maximo > limite_venta:
             raise HTTPException(
@@ -347,18 +369,24 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
                 detail=f"El precio máximo (L. {precio_maximo}) supera el límite permitido de L. {limite_venta}"
             )
 
+        # 6. Generar número de recibo
         num_recibo = int(f"{(int(ahora.timestamp() * 1000) % 10000000)}{random.randint(100, 999)}")
 
+        # 7. Preparar datos para la BD
+        # - numero_jugado: lista plana de números (para cumplir NOT NULL)
+        # - precio_unitario: valor del primer precio (NO se usa, solo para NOT NULL)
+        # - detalle_venta: detalle agrupado por precio (fuente de verdad)
         numeros_planos = [item["numero"] for item in venta.items]
         numeros_json = json.dumps(numeros_planos)
         primer_precio = venta.items[0]["precio"] if venta.items else 0
 
+        # 8. Guardar en la BD
         sql_insert = """
             INSERT INTO ventas (
                 num_recibo, id_usuario, cliente, fecha_hora,
-                cierre_asignado, total,
+                cierre_asignado, id_mayorista, total,
                 numero_jugado, precio_unitario, detalle_venta
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(sql_insert, (
             num_recibo,
@@ -366,14 +394,16 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
             venta.cliente,
             ahora,
             cierre,
+            id_mayorista,
             total,
-            numeros_json,
-            primer_precio,
-            detalle_json
+            numeros_json,        # <--- LISTA PLANA DE NÚMEROS
+            primer_precio,       # <--- PRIMER PRECIO (solo para NOT NULL)
+            detalle_json         # <--- DETALLE AGRUPADO (fuente de verdad)
         ))
 
         conn.commit()
 
+        # 8. Generar PDF usando el diccionario agrupado
         fecha_str = ahora.strftime("%d-%m-%Y %H:%M:%S")
         pdf_buffer = generar_recibo_pdf(
             num_recibo=num_recibo,
@@ -401,6 +431,7 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
 
 @app.get("/api/recibo/{num_recibo}")
 async def obtener_recibo(num_recibo: int, authorization: str = Header(None)):
+    # Validar token
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
     token = authorization.replace("Bearer ", "")
@@ -429,6 +460,7 @@ async def obtener_recibo(num_recibo: int, authorization: str = Header(None)):
         grupos = json.loads(detalle_venta_json)
         conn.close()
 
+        # Formato para el frontend: lista de objetos {numero, precio} para llenar la tabla
         items = []
         for grupo in grupos:
             precio = grupo["precio"]
@@ -459,12 +491,14 @@ async def logout(authorization: str = Header(None)):
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
         
+        # Marcar la sesión como inactiva
         cursor.execute("""
             UPDATE sesiones_activas
             SET activo = FALSE
             WHERE token = %s AND activo = TRUE
         """, (token,))
         
+        # Si no se actualizó ninguna fila, el token no existía o ya estaba inactivo
         if cursor.rowcount == 0:
             conn.close()
             raise HTTPException(status_code=404, detail="Sesión no encontrada o ya cerrada")
@@ -488,6 +522,7 @@ async def tablero_estado(
     fecha: str = None,
     cierre: str = None
 ):
+    # Validar token
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
     token = authorization.replace("Bearer ", "")
@@ -499,19 +534,32 @@ async def tablero_estado(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
+        # 1. Obtener el id_mayorista del usuario logueado
+        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] is None:
+            conn.close()
+            return {}
+
+        id_mayorista = resultado[0]
+
+        # 2. Determinar fecha y cierre (usando zona Managua)
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
+        # Si no se envió fecha, usar hoy
         if fecha:
             fecha_consulta = datetime.strptime(fecha, "%Y-%m-%d").date()
         else:
             fecha_consulta = ahora.date()
 
+        # Si no se envió cierre, calcular automático
         if cierre:
             cierre_consulta = cierre
         else:
             cierre_consulta = calcular_cierre(ahora.hour)
 
+        # 3. Consulta SQL usando los filtros dinámicos
         cursor.execute("""
             SELECT 
                 num_individual AS numero,
@@ -520,10 +568,11 @@ async def tablero_estado(
             LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
             LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
             WHERE v.cierre_asignado = %s
+              AND v.id_mayorista = %s
               AND v.id_usuario = %s
               AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
             GROUP BY num_individual
-        """, (cierre_consulta, id_usuario, fecha_consulta))
+        """, (cierre_consulta, id_mayorista, id_usuario, fecha_consulta))
 
         filas = cursor.fetchall()
         conn.close()
@@ -547,6 +596,7 @@ async def reporte_ventas_cliente(
     fecha_inicio: str = None,
     fecha_fin: str = None
 ):
+    # Validar token
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
     token = authorization.replace("Bearer ", "")
@@ -558,6 +608,16 @@ async def reporte_ventas_cliente(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
+        # 1. Obtener id_mayorista del usuario
+        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] is None:
+            conn.close()
+            return []
+
+        id_mayorista = resultado[0]
+
+        # 2. Determinar rango de fechas
         managua_tz = timezone(timedelta(hours=-6))
         hoy = datetime.now(managua_tz).date()
 
@@ -571,7 +631,7 @@ async def reporte_ventas_cliente(
         else:
             fecha_fin_dt = hoy
 
-        # CORRECCIÓN CRÍTICA: Agregar v.cliente y v.cierre_asignado al GROUP BY
+        # 3. Consulta SQL: Agregamos num_recibo al SELECT y al GROUP BY
         cursor.execute("""
             SELECT 
                 v.num_recibo,
@@ -580,15 +640,17 @@ async def reporte_ventas_cliente(
                 SUM(v.cantidad) AS total_numeros,
                 SUM(v.total) AS total_monto
             FROM ventas v
-            WHERE v.id_usuario = %s
+            WHERE v.id_mayorista = %s
+              AND v.id_usuario = %s
               AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
             GROUP BY v.num_recibo, v.cliente, v.cierre_asignado
             ORDER BY v.cliente, v.cierre_asignado
-        """, (id_usuario, fecha_inicio_dt, fecha_fin_dt))
+        """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
 
         filas = cursor.fetchall()
         conn.close()
 
+        # 4. Formatear respuesta incluyendo num_recibo
         resultado = []
         for num_recibo, cliente, cierre, total_numeros, total_monto in filas:
             resultado.append({
@@ -614,6 +676,7 @@ async def reporte_ventas_cliente_pdf(
     fecha_inicio: str = None,
     fecha_fin: str = None
 ):
+    # Validar token
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no proporcionado")
     token = authorization.replace("Bearer ", "")
@@ -625,6 +688,16 @@ async def reporte_ventas_cliente_pdf(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
+        # 1. Obtener id_mayorista del usuario
+        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] is None:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Usuario sin mayorista")
+
+        id_mayorista = resultado[0]
+
+        # 2. Determinar rango de fechas
         managua_tz = timezone(timedelta(hours=-6))
         hoy = datetime.now(managua_tz).date()
 
@@ -638,6 +711,7 @@ async def reporte_ventas_cliente_pdf(
         else:
             fecha_fin_dt = hoy
 
+        # 3. Consulta SQL: Agrupar por cliente y cierre
         cursor.execute("""
             SELECT 
                 cliente,
@@ -645,26 +719,31 @@ async def reporte_ventas_cliente_pdf(
                 SUM(cantidad) AS total_numeros,
                 SUM(total) AS total_monto
             FROM ventas
-            WHERE id_usuario = %s
+            WHERE id_mayorista = %s
+              AND id_usuario = %s
               AND DATE(fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
             GROUP BY cliente, cierre_asignado
             ORDER BY cliente, cierre_asignado
-        """, (id_usuario, fecha_inicio_dt, fecha_fin_dt))
+        """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
 
         filas = cursor.fetchall()
         conn.close()
 
+        # 4. Generar PDF
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=letter)
         width, height = letter
 
+        # Título
         c.setFont("Helvetica-Bold", 18)
         c.drawCentredString(width / 2, height - 50, "Reporte de Ventas por Cliente")
 
+        # Fechas
         c.setFont("Helvetica", 12)
         c.drawString(50, height - 80, f"Desde: {fecha_inicio_dt.strftime('%d/%m/%Y')}")
         c.drawString(250, height - 80, f"Hasta: {fecha_fin_dt.strftime('%d/%m/%Y')}")
 
+        # Encabezados de tabla
         y = height - 120
         c.setFont("Helvetica-Bold", 12)
         c.drawString(50, y, "Cliente")
@@ -673,23 +752,25 @@ async def reporte_ventas_cliente_pdf(
         c.drawString(450, y, "Total L.")
         c.line(50, y - 5, 550, y - 5)
 
+        # Datos
         y -= 25
         c.setFont("Helvetica", 11)
         total_general = 0
 
         for cliente, cierre, total_numeros, total_monto in filas:
-            if y < 50:
+            if y < 50:  # Salto de página si no hay espacio
                 c.showPage()
                 y = height - 50
                 c.setFont("Helvetica", 11)
 
-            c.drawString(50, y, cliente[:30])
+            c.drawString(50, y, cliente[:30])  # Truncar si es muy largo
             c.drawString(200, y, cierre)
             c.drawString(350, y, str(total_numeros))
             c.drawString(450, y, f"{total_monto:.2f}")
             total_general += total_monto
             y -= 20
 
+        # Total general
         y -= 10
         c.setFont("Helvetica-Bold", 12)
         c.line(50, y - 5, 550, y - 5)
