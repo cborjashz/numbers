@@ -750,36 +750,37 @@
             const fechaInicio = document.getElementById('reporteFechaInicio').value;
             const fechaFin = document.getElementById('reporteFechaFin').value;
 
+            // Se corrige colspan a 5
             if (!fechaInicio || !fechaFin) {
-                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Seleccione ambas fechas</td></tr>';
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff5555;">❌ Seleccione ambas fechas</td></tr>';
                 return;
             }
 
             const token = localStorage.getItem('loteria_token');
             if (!token) {
-                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
-                return;
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
+            return;
             }
 
             try {
                 const res = await fetch(`${API}/reporte-ventas-cliente?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`, {
                     headers: { 'Authorization': 'Bearer ' + token }
-                });
+             });
 
                 if (!res.ok) {
                     if (res.status === 401) {
-                        document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
+                        document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
                         return;
                     }
                     const data = await res.json();
-                    document.getElementById('reporteTableBody').innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ ${data.detail}</td></tr>`;
+                    document.getElementById('reporteTableBody').innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff5555;">❌ ${data.detail}</td></tr>`;
                     return;
                 }
 
                 const datos = await res.json();
 
                 if (datos.length === 0) {
-                    document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #aaa;">No hay ventas en el rango seleccionado</td></tr>';
+                    document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #aaa;">No hay ventas en el rango seleccionado</td></tr>';
                     return;
                 }
 
@@ -788,30 +789,32 @@
                 datos.forEach(item => {
                     totalGeneral += item.total_monto;
                     html += `
-                        <tr style="border-bottom: 1px solid #3b3b5c;">
-                            <td style="padding: 8px;">${item.cliente}</td>
-                            <td style="padding: 8px;">${item.cierre}</td>
-                            <td style="padding: 8px; text-align: center;">${item.total_numeros}</td>
-                            <td style="padding: 8px; text-align: right;">L. ${item.total_monto.toFixed(2)}</td>
-                            <td style="padding: 8px; text-align: center; white-space: nowrap;">
-                                <button onclick="cargarRecibo(${item.num_recibo})" style="background: #ffaa00; color: black; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; margin-right: 4px; font-size: 14px;">📂</button>
-                                <button onclick="reimprimirRecibo(${item.num_recibo})" style="background: #2196f3; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 14px;">🖨️</button>
+                        <tr style="border-bottom: 1px solid #3b3b5c; font-size: 13px;">
+                            <td style="padding: 8px; width: 20%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.cliente}</td>
+                            <td style="padding: 8px; width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.cierre}</td>
+                            <td style="padding: 8px; width: 10%; text-align: center;">${item.total_numeros}</td>
+                            <td style="padding: 8px; width: 18%; text-align: right; white-space: nowrap;">L. ${item.total_monto.toFixed(2)}</td>
+                            <td style="padding: 8px; width: 17%; text-align: center; white-space: nowrap;">
+                                <button onclick="cargarRecibo(${item.num_recibo})" style="background: #ffaa00; color: black; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; margin-right: 2px; font-size: 12px;" title="Ver Detalle">📂</button>
+                                <button onclick="reimprimirRecibo(${item.num_recibo})" style="background: #2196f3; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Reimprimir">🖨️</button>
                             </td>
                         </tr>
                     `;
                 });
 
+                // Fila Total General estructurada correctamente (colspan 3)
                 html += `
-                    <tr style="background: #00a86b; font-weight: bold;">
-                        <td colspan="4" style="padding: 8px; text-align: right;">TOTAL GENERAL</td>
+                    <tr style="background: #00a86b; color: white; font-weight: bold; font-size: 13px;">
+                        <td colspan="3" style="padding: 8px 12px; text-align: right;">TOTAL GENERAL</td>
                         <td style="padding: 8px; text-align: right;">L. ${totalGeneral.toFixed(2)}</td>
+                        <td></td>
                     </tr>
                 `;
 
                 document.getElementById('reporteTableBody').innerHTML = html;
 
             } catch (error) {
-                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Error de conexión</td></tr>';
+                document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff5555;">❌ Error de conexión</td></tr>';
             }
         }
         
