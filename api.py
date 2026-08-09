@@ -482,6 +482,85 @@ async def obtener_recibo(num_recibo: int, authorization: str = Header(None)):
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/api/reimprimir/{num_recibo}")
+async def reimprimir_recibo(num_recibo: int, authorization: str = Header(None)):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    id_usuario, _ = await validar_token(token)
+
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
+
+        # Consultar la venta y los datos del vendedor
+        cursor.execute("""
+            SELECT 
+                v.fecha_hora,
+                v.cliente,
+                v.detalle_venta,
+                v.total,
+                v.cierre_asignado,
+                u.nombre_usuario
+            FROM ventas v
+            JOIN usuarios u ON v.id_usuario = u.id_usuario
+            WHERE v.num_recibo = %s
+        """, (num_recibo,))
+
+        resultado = cursor.fetchone()
+        conn.close()
+
+        if not resultado:
+            raise HTTPException(status_code=404, detail="Recibo no encontrado")
+
+        fecha_hora, cliente, detalle_venta_json, total, cierre, vendedor = resultado
+
+        if not detalle_venta_json:
+            raise HTTPException(status_code=400, detail="El recibo no tiene detalle de precios registrado")
+
+        # Parsear detalle_venta si viene como string o list desde psycopg2
+        if isinstance(detalle_venta_json, str):
+            grupos_list = json.loads(detalle_venta_json)
+        else:
+            grupos_list = detalle_venta_json
+
+        # Reconstruir la estructura {precio: [numeros]} que necesita generar_recibo_pdf
+        agrupado = {}
+        for grupo in grupos_list:
+            precio = float(grupo["precio"])
+            numeros = grupo["numeros"]
+            agrupado[precio] = numeros
+
+        # Formatear fecha para el PDF
+        fecha_str = fecha_hora.strftime("%d-%m-%Y %H:%M:%S")
+
+        # Generar el PDF del recibo
+        pdf_buffer = generar_recibo_pdf(
+            num_recibo=num_recibo,
+            fecha_emision=fecha_str,
+            cliente=cliente,
+            agrupado=agrupado,
+            total=float(total),
+            cierre=cierre,
+            vendedor=vendedor
+        )
+
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=recibo_{num_recibo}.pdf"}
+        )
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/logout")
 async def logout(authorization: str = Header(None)):
