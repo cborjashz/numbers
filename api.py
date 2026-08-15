@@ -371,9 +371,14 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
     conn = None
     try:
         # === VALIDACIÓN DE PRECIO NEGATIVO ===
+        # === VALIDACIÓN DE PRECIO NEGATIVO Y CLIENTE ===
         for item in venta.items:
             if item["precio"] <= 0:
                 raise HTTPException(status_code=400, detail="Todos los precios deben ser mayores a 0")
+        
+        # Si el cliente llega vacío, lo forzamos a "Cliente Final"
+        if not venta.cliente or venta.cliente.strip() == "":
+            venta.cliente = "Cliente Final"
 
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         conn.autocommit = False

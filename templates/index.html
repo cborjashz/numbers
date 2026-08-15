@@ -656,7 +656,9 @@
         }
 
         async function vender() {
-            const cliente = document.getElementById('clienteInput').value;
+            const clienteInput = document.getElementById('clienteInput').value;
+            // Si está vacío, usamos "Cliente Final"
+            const cliente = clienteInput.trim() === '' ? 'Cliente Final' : clienteInput;
             const cierreElegido = document.getElementById('cierreSelect').value;
 
             // Obtener los items de la tabla resumen
@@ -677,10 +679,7 @@
                 }
             }
 
-            if (!cliente) {
-                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Complete el nombre del Cliente</span>';
-                return;
-            }
+            // Ya no validamos que el cliente esté vacío, usamos "Cliente Final" por defecto
 
             const token = localStorage.getItem('loteria_token');
             if (!token) {
@@ -702,6 +701,8 @@
                     cierre_elegido: cierreElegido || null 
                 })
             });
+            
+            // ... el resto del código (descarga del PDF, limpieza) sigue igual ...
             
             if (res.ok) {
                 const blob = await res.blob();
