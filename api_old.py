@@ -54,77 +54,147 @@ def generar_recibo_pdf(
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
 
+    # Colores base
+    color_oro = (0.85, 0.65, 0.13)      # Un dorado más sobrio y elegante
+    color_oscuro = (0.15, 0.15, 0.15)    # Negro suave para texto
+    color_gris = (0.4, 0.4, 0.4)        # Gris para etiquetas secundarias
+
+    # Margen izquierdo y ancho útil
+    margin_x = 50
+    content_width = width - (margin_x * 2)
+
     # === ENCABEZADO ===
-    c.setStrokeColor((1, 0.84, 0))  # Amarillo
-    c.setLineWidth(2)
-    c.line(50, height - 50, width - 50, height - 50)
+    # Marco superior decorativo
+    c.setStrokeColor(color_oro)
+    c.setLineWidth(3)
+    c.line(margin_x, height - 40, width - margin_x, height - 40)
 
-    c.setFont("Helvetica-Bold", 18)
-    c.setFillColor((0, 0, 0))
-    c.drawCentredString(width / 2, height - 80, "Comprobante de Pago")
+    # Título principal
+    c.setFont("Helvetica-Bold", 20)
+    c.setFillColor(color_oscuro)
+    c.drawCentredString(width / 2, height - 70, "COMPROBANTE DE COMPRA")
 
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, height - 120, "Cliente:")
-    c.setFont("Helvetica", 12)
-    c.drawString(130, height - 120, cliente.title())
+    # Subtítulo/Estado
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(color_oro)
+    c.drawCentredString(width / 2, height - 88, f"SISTEMA DE LOTERÍA • {cierre.upper()}")
 
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, height - 140, "Fecha de Emisión:")
-    c.setFont("Helvetica", 12)
-    c.drawString(200, height - 140, fecha_emision)
+    # Separador
+    c.setStrokeColor((0.8, 0.8, 0.8))
+    c.setLineWidth(0.5)
+    c.line(margin_x, height - 100, width - margin_x, height - 100)
 
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, height - 160, "Número de Recibo:")
-    c.setFont("Helvetica", 12)
-    c.drawString(200, height - 160, str(num_recibo))
+    # === DATOS GENERALES (Estructurado en 2 columnas) ===
+    y_meta = height - 125
+    line_height = 18
 
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, height - 180, "Vendedor:")
-    c.setFont("Helvetica", 12)
-    c.drawString(150, height - 180, vendedor)
+    # Columna 1 (Cliente y Vendedor)
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(color_gris)
+    c.drawString(margin_x, y_meta, "CLIENTE:")
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(color_oscuro)
+    c.drawString(margin_x + 65, y_meta, cliente.title())
 
-    c.setStrokeColor((1, 0.84, 0))
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(color_gris)
+    c.drawString(margin_x, y_meta - line_height, "VENDEDOR:")
+    c.setFont("Helvetica", 11)
+    c.setFillColor(color_oscuro)
+    c.drawString(margin_x + 65, y_meta - line_height, vendedor)
+
+    # Columna 2 (Recibo y Fecha)
+    col2_x = width / 2 + 40
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(color_gris)
+    c.drawString(col2_x, y_meta, "RECIBO N°:")
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(color_oscuro)
+    c.drawString(col2_x + 75, y_meta, str(num_recibo))
+
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(color_gris)
+    c.drawString(col2_x, y_meta - line_height, "FECHA:")
+    c.setFont("Helvetica", 11)
+    c.setFillColor(color_oscuro)
+    c.drawString(col2_x + 75, y_meta - line_height, fecha_emision)
+
+    # Separador para detalle
+    y_line = y_meta - (line_height * 2) - 10
+    c.setStrokeColor(color_oro)
     c.setLineWidth(1)
-    c.line(50, height - 200, width - 50, height - 200)
+    c.line(margin_x, y_line, width - margin_x, y_line)
+
+    # Encabezado de la tabla de ítems
+    y_table = y_line - 20
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(color_oscuro)
+    c.drawString(margin_x, y_table, "DETALLE DE JUGADAS")
+    c.drawRightString(width - margin_x, y_table, "SUBTOTAL")
+
+    c.setStrokeColor((0.85, 0.85, 0.85))
+    c.setLineWidth(0.5)
+    c.line(margin_x, y_table - 6, width - margin_x, y_table - 6)
 
     # === NÚMEROS JUGADOS (AGRUPADOS POR PRECIO) ===
-    y = height - 240
-    c.setFont("Helvetica-Bold", 12)
-
-    # Ordenar los precios de mayor a menor
+    y = y_table - 25
     precios_ordenados = sorted(agrupado.keys(), reverse=True)
+    total_numeros_jugados = 0
 
     for precio in precios_ordenados:
         numeros = agrupado[precio]
+        cant_numeros = len(numeros)
+        total_numeros_jugados += cant_numeros
+        subtotal_grupo = precio * cant_numeros
         texto_numeros = ", ".join(numeros)
-        
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, y, f"Números a L. {precio:.2f}:")
-        c.setFont("Helvetica", 12)
-        c.drawString(180, y, texto_numeros)
-        y -= 25
 
-    # === CIERRE Y PIE ===
-    y_pos_cierre = y + 15
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50, y_pos_cierre, cierre)
+        # Etiqueta de precio y cantidad
+        c.setFont("Helvetica-Bold", 10)
+        c.setFillColor(color_oscuro)
+        etiqueta = f"{cant_numeros} num. a L. {precio:.2f} c/u:"
+        c.drawString(margin_x, y, etiqueta)
 
-    c.setFont("Helvetica", 10)
-    c.drawRightString(width - 50, y_pos_cierre, fecha_emision)
-    c.drawRightString(width - 50, y_pos_cierre - 20, vendedor)
+        # Monto acumulado por grupo
+        c.setFont("Helvetica", 10)
+        c.drawRightString(width - margin_x, y, f"L. {subtotal_grupo:.2f}")
 
-    c.setStrokeColor((1, 0.84, 0))
+        # Listado de números jugados (indentado hacia abajo)
+        y -= 14
+        c.setFont("Helvetica", 10)
+        c.setFillColor((0.25, 0.25, 0.25))
+        c.drawString(margin_x + 15, y, texto_numeros)
+
+        y -= 22  # Espacio entre grupos
+
+    # === RESUMEN Y PIE DE PÁGINA ===
+    c.setStrokeColor(color_oro)
     c.setLineWidth(1)
-    c.line(50, y_pos_cierre + 20, width - 50, y_pos_cierre + 20)
+    c.line(margin_x, y + 10, width - margin_x, y + 10)
 
-    y_pos_total = y_pos_cierre + 40
+    y_totales = y - 15
+
+    # Cantidad total de números
+    c.setFont("Helvetica", 11)
+    c.setFillColor(color_gris)
+    c.drawString(margin_x, y_totales, f"Cantidad total de números: {total_numeros_jugados}")
+
+    # Cuadro destacado para el TOTAL
+    c.setFillColor(color_oscuro)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(margin_x, y_totales - 25, "TOTAL A PAGAR:")
+
     c.setFont("Helvetica-Bold", 20)
-    c.drawString(50, y_pos_total, "Total L.")
-    c.setFont("Helvetica-Bold", 28)
-    c.drawRightString(width - 50, y_pos_total, f"{total:.2f}")
+    c.setFillColor(color_oro)
+    c.drawRightString(width - margin_x, y_totales - 25, f"L. {total:.2f}")
 
-    c.setFont("Helvetica", 12)
-    c.drawString(50, y_pos_total + 25, f"Cantidad de números: {sum(len(v) for v in agrupado.values())}")
+    # Línea inferior final
+    c.setStrokeColor((0.8, 0.8, 0.8))
+    c.setLineWidth(0.5)
+    c.line(margin_x, y_totales - 40, width - margin_x, y_totales - 40)
+
+    c.setFont("Helvetica-Oblique", 9)
+    c.setFillColor(color_gris)
+    c.drawCentredString(width / 2, y_totales - 55, "¡Gracias por su compra y buena suerte!")
 
     c.save()
     buffer.seek(0)
@@ -457,7 +527,12 @@ async def obtener_recibo(num_recibo: int, authorization: str = Header(None)):
         if not detalle_venta_json:
             raise HTTPException(status_code=400, detail="El recibo no tiene detalle de precios")
 
-        grupos = json.loads(detalle_venta_json)
+        # Verificar si psycopg2 ya parseó el JSONB a list/dict o si viene como str
+        if isinstance(detalle_venta_json, str):
+            grupos = json.loads(detalle_venta_json)
+        else:
+            grupos = detalle_venta_json
+
         conn.close()
 
         # Formato para el frontend: lista de objetos {numero, precio} para llenar la tabla
@@ -470,6 +545,85 @@ async def obtener_recibo(num_recibo: int, authorization: str = Header(None)):
         return {
             "items": items
         }
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/api/reimprimir/{num_recibo}")
+async def reimprimir_recibo(num_recibo: int, authorization: str = Header(None)):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    id_usuario, _ = await validar_token(token)
+
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
+
+        # Consultar la venta y los datos del vendedor
+        cursor.execute("""
+            SELECT 
+                v.fecha_hora,
+                v.cliente,
+                v.detalle_venta,
+                v.total,
+                v.cierre_asignado,
+                u.nombre_usuario
+            FROM ventas v
+            JOIN usuarios u ON v.id_usuario = u.id_usuario
+            WHERE v.num_recibo = %s
+        """, (num_recibo,))
+
+        resultado = cursor.fetchone()
+        conn.close()
+
+        if not resultado:
+            raise HTTPException(status_code=404, detail="Recibo no encontrado")
+
+        fecha_hora, cliente, detalle_venta_json, total, cierre, vendedor = resultado
+
+        if not detalle_venta_json:
+            raise HTTPException(status_code=400, detail="El recibo no tiene detalle de precios registrado")
+
+        # Parsear detalle_venta si viene como string o list desde psycopg2
+        if isinstance(detalle_venta_json, str):
+            grupos_list = json.loads(detalle_venta_json)
+        else:
+            grupos_list = detalle_venta_json
+
+        # Reconstruir la estructura {precio: [numeros]} que necesita generar_recibo_pdf
+        agrupado = {}
+        for grupo in grupos_list:
+            precio = float(grupo["precio"])
+            numeros = grupo["numeros"]
+            agrupado[precio] = numeros
+
+        # Formatear fecha para el PDF
+        fecha_str = fecha_hora.strftime("%d-%m-%Y %H:%M:%S")
+
+        # Generar el PDF del recibo
+        pdf_buffer = generar_recibo_pdf(
+            num_recibo=num_recibo,
+            fecha_emision=fecha_str,
+            cliente=cliente,
+            agrupado=agrupado,
+            total=float(total),
+            cierre=cierre,
+            vendedor=vendedor
+        )
+
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=recibo_{num_recibo}.pdf"}
+        )
 
     except Exception as e:
         if conn:

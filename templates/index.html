@@ -370,14 +370,15 @@
                 limpiarSeleccion();
 
                 // Agregar los números con sus precios a la tabla resumen y al tablero
+                // Agregar los números con sus precios a la tabla resumen y al tablero
                 data.items.forEach(item => {
                     const num = item.numero;
                     const precio = item.precio;
                     const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
-                    if (btn && !btn.classList.contains('selected')) {
+                    if (btn) {
+                        // Siempre marcamos como seleccionado
                         btn.classList.add('selected');
-                        selectedNumbers.push(num);
-                        // Agregar a la tabla resumen con su precio
+                        // Siempre agregamos a la tabla resumen (incluso si ya estaba)
                         agregarAResumen(num, precio);
                     }
                 });
@@ -439,15 +440,13 @@
         }
 
         function toggleNumber(num, btn) {
-            // Si el número ya está seleccionado, lo desmarcamos
+            // Si el número ya está seleccionado, lo desmarcamos si el usuario hace clic en él
             if (btn.classList.contains('selected')) {
-                btn.classList.remove('selected');
-                const idx = selectedNumbers.indexOf(num);
-                if (idx > -1) {
-                    selectedNumbers.splice(idx, 1);
-                }
-                // También lo eliminamos de la tabla resumen si estaba ahí
-                eliminarDeResumen(num);
+                // Opcional: si quieres permitir desmarcar, conservamos la lógica actual.
+                // Pero para permitir múltiples selecciones del mismo número, solo necesitamos
+                // que al hacer clic en un número ya seleccionado, se abra el modal para agregar otra fila.
+                // Por ahora, si el usuario hace clic en un número ya seleccionado, abrimos el modal.
+                abrirModalPrecio(num, btn);
                 return;
             }
 
@@ -485,10 +484,10 @@
                 pendingQuickNumbers.forEach(num => {
                     // Buscar el botón del número en el tablero
                     const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
-                    if (btn && !btn.classList.contains('selected')) {
+                    // SIEMPRE lo marcamos como seleccionado (incluso si ya lo estaba)
+                    if (btn) {
                         btn.classList.add('selected');
-                        selectedNumbers.push(num);
-                        // Agregar a la tabla resumen
+                        // Siempre agregamos a la tabla resumen (sin importar si ya existía)
                         agregarAResumen(num, precio);
                     }
                 });
@@ -501,8 +500,8 @@
 
             // Caso 2: Es un número individual (pendingNumber y pendingButton están definidos)
             if (pendingNumber && pendingButton) {
+                // Siempre marcamos como seleccionado y agregamos a la tabla resumen
                 pendingButton.classList.add('selected');
-                selectedNumbers.push(pendingNumber);
                 agregarAResumen(pendingNumber, precio);
                 cerrarModalPrecio();
                 actualizarMontosTablero();
