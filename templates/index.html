@@ -96,6 +96,10 @@
                 <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
                     <button onclick="abrirReporte()" style="width: auto; padding: 8px 15px; background: #f39c12; color: black; font-size: 14px; border-radius: 8px;">📊 Reporte por Cliente</button>
                 </div>
+                <!-- Botón para abrir reporte de cierre -->
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                    <button onclick="abrirReporteCierre()" style="width: auto; padding: 8px 15px; background: #9b59b6; color: white; font-size: 14px; border-radius: 8px;">📊 Reporte de Cierre</button>
+                </div>
             </div>
 
             <!-- Cargar recibo de referencia -->
@@ -879,6 +883,84 @@
             }
         };
 
+        function abrirReporteCierre() {
+            document.getElementById('reporteCierreModal').style.display = 'flex';
+            const hoy = new Date().toISOString().split('T')[0];
+            document.getElementById('reporteCierreFecha').value = hoy;
+            document.getElementById('reporteCierreSelect').value = '';
+            document.getElementById('reporteCierreResultado').innerHTML = '';
+        }
+
+        function cerrarReporteCierre() {
+            document.getElementById('reporteCierreModal').style.display = 'none';
+        }
+
+        async function cargarReporteCierre() {
+            const fecha = document.getElementById('reporteCierreFecha').value;
+            const cierre = document.getElementById('reporteCierreSelect').value;
+
+            if (!fecha || !cierre) {
+                document.getElementById('reporteCierreResultado').innerHTML = '<div style="color: #ff5555; text-align: center; padding: 20px;">❌ Seleccione una fecha y un cierre válido.</div>';
+                return;
+            }
+
+            const token = localStorage.getItem('loteria_token');
+            if (!token) {
+                document.getElementById('reporteCierreResultado').innerHTML = '<div style="color: #ff5555; text-align: center; padding: 20px;">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</div>';
+                logout();
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API}/reporte-cierre?fecha=${fecha}&cierre=${encodeURIComponent(cierre)}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        document.getElementById('reporteCierreResultado').innerHTML = '<div style="color: #ff5555; text-align: center; padding: 20px;">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</div>';
+                        logout();
+                        return;
+                    }
+                    const data = await res.json();
+                    document.getElementById('reporteCierreResultado').innerHTML = `<div style="color: #ff5555; text-align: center; padding: 20px;">❌ ${data.detail}</div>`;
+                    return;
+                }
+
+                const datos = await res.json();
+
+                // Construir el HTML del reporte
+                let html = `
+                    <div style="background: #3b3b5c; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                            <div><strong>Vendedor:</strong> ${datos.vendedor}</div>
+                            <div><strong>Cierre:</strong> ${datos.cierre}</div>
+                            <div><strong>Fecha:</strong> ${datos.fecha}</div>
+                            <div><strong>Total del Cierre:</strong> <span style="color: #ffd700; font-weight: bold;">L. ${datos.total.toFixed(2)}</span></div>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px;">
+                `;
+
+                // Generar los botones/números con sus montos
+                for (const [num, monto] of Object.entries(datos.numeros)) {
+                    const color = monto > 0 ? 'background: #00a86b; color: white;' : 'background: #3b3b5c; color: #666;';
+                    html += `
+                        <div style="${color} padding: 8px; border-radius: 5px; text-align: center; font-size: 12px;">
+                            <div style="font-weight: bold; font-size: 14px;">${num}</div>
+                            <div style="font-size: 10px;">${monto > 0 ? 'L. ' + monto.toFixed(2) : ''}</div>
+                        </div>
+                    `;
+                }
+
+                html += `</div>`;
+                document.getElementById('reporteCierreResultado').innerHTML = html;
+
+            } catch (error) {
+                document.getElementById('reporteCierreResultado').innerHTML = '<div style="color: #ff5555; text-align: center; padding: 20px;">❌ Error de conexión al cargar el reporte.</div>';
+            }
+        }
+        
     </script>
     <!-- MODAL DE REPORTE -->
     <div id="reporteModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
@@ -911,5 +993,28 @@
             </div>
         </div>
     </div>
+
+    <!-- MODAL DE REPORTE DE CIERRE -->
+    <div id="reporteCierreModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: #2d2d44; padding: 20px; border-radius: 15px; width: 90%; max-width: 900px; max-height: 90vh; overflow-y: auto; color: white;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                <h2 style="margin: 0;">📊 Reporte de Cierre</h2>
+                <button onclick="cerrarReporteCierre()" style="background: #d32f2f; color: white; border: none; border-radius: 5px; padding: 5px 15px; cursor: pointer;">✕ Cerrar</button>
+            </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                <input type="date" id="reporteCierreFecha" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 150px;">
+                <select id="reporteCierreSelect" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 150px;">
+                    <option value="">Seleccione un cierre</option>
+                    <option value="Cierre 1 (11am)">Cierre 1 (11am)</option>
+                    <option value="Cierre 2 (3pm)">Cierre 2 (3pm)</option>
+                    <option value="Cierre 3 (9pm)">Cierre 3 (9pm)</option>
+                </select>
+                <button onclick="cargarReporteCierre()" style="width: auto; padding: 8px 15px; background: #00a86b; color: white; border: none; border-radius: 5px;">🔍 Cargar</button>
+            </div>
+            <div id="reporteCierreResultado" style="max-height: 500px; overflow-y: auto;">
+                <!-- Aquí se cargará el reporte -->
+            </div>
+        </div>
+    </div>    
 </body>
 </html>
