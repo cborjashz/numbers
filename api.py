@@ -756,7 +756,9 @@ async def tablero_estado(
 async def reporte_ventas_cliente(
     authorization: str = Header(None),
     fecha_inicio: str = None,
-    fecha_fin: str = None
+    fecha_fin: str = None,
+    cliente_filtro: str = None,
+    numero_filtro: str = None
 ):
     # Validar token
     if not authorization or not authorization.startswith("Bearer "):
@@ -793,8 +795,8 @@ async def reporte_ventas_cliente(
         else:
             fecha_fin_dt = hoy
 
-        # 3. Consulta SQL: Agregamos num_recibo al SELECT y al GROUP BY
-        cursor.execute("""
+        # 3. Construir la consulta SQL base
+        sql = """
             SELECT 
                 v.num_recibo,
                 v.cliente,
@@ -805,14 +807,37 @@ async def reporte_ventas_cliente(
             WHERE v.id_mayorista = %s
               AND v.id_usuario = %s
               AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
+        """
+        params = [id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt]
+
+        # 4. Filtro por cliente (ILIKE)
+        if cliente_filtro and cliente_filtro.strip() != "":
+            sql += " AND v.cliente ILIKE %s"
+            params.append(f"%{cliente_filtro.strip()}%")
+
+        # 5. Filtro por número (búsqueda dentro del JSONB detalle_venta)
+        if numero_filtro and numero_filtro.strip() != "":
+            sql += """
+                AND EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(v.detalle_venta) AS detalle
+                    CROSS JOIN jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                    WHERE num_individual = %s
+                )
+            """
+            params.append(numero_filtro.strip())
+
+        # 6. Completar la consulta
+        sql += """
             GROUP BY v.num_recibo, v.cliente, v.cierre_asignado
             ORDER BY v.cliente, v.cierre_asignado
-        """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
+        """
 
+        cursor.execute(sql, params)
         filas = cursor.fetchall()
         conn.close()
 
-        # 4. Formatear respuesta incluyendo num_recibo
+        # 7. Formatear respuesta
         resultado = []
         for num_recibo, cliente, cierre, total_numeros, total_monto in filas:
             resultado.append({

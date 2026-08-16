@@ -769,10 +769,11 @@
         }
 
         async function cargarReporte() {
+            const clienteFiltro = document.getElementById('reporteClienteFiltro').value;
+            const numeroFiltro = document.getElementById('reporteNumeroFiltro').value;
             const fechaInicio = document.getElementById('reporteFechaInicio').value;
             const fechaFin = document.getElementById('reporteFechaFin').value;
 
-            // Se corrige colspan a 5
             if (!fechaInicio || !fechaFin) {
                 document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff5555;">❌ Seleccione ambas fechas</td></tr>';
                 return;
@@ -781,13 +782,22 @@
             const token = localStorage.getItem('loteria_token');
             if (!token) {
                 document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
-            return;
+                return;
             }
 
             try {
-                const res = await fetch(`${API}/reporte-ventas-cliente?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`, {
+                // Construir la URL con los parámetros
+                let url = `${API}/reporte-ventas-cliente?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
+                if (clienteFiltro && clienteFiltro.trim() !== "") {
+                    url += `&cliente_filtro=${encodeURIComponent(clienteFiltro.trim())}`;
+                }
+                if (numeroFiltro && numeroFiltro.trim() !== "") {
+                    url += `&numero_filtro=${encodeURIComponent(numeroFiltro.trim())}`;
+                }
+
+                const res = await fetch(url, {
                     headers: { 'Authorization': 'Bearer ' + token }
-             });
+                });
 
                 if (!res.ok) {
                     if (res.status === 401) {
@@ -824,7 +834,6 @@
                     `;
                 });
 
-                // Fila Total General estructurada correctamente (colspan 3)
                 html += `
                     <tr style="background: #00a86b; color: white; font-weight: bold; font-size: 13px;">
                         <td colspan="3" style="padding: 8px 12px; text-align: right;">TOTAL GENERAL</td>
@@ -1037,9 +1046,11 @@
                 <h2 style="margin: 0;">📊 Reporte de Ventas por Cliente</h2>
                 <button onclick="cerrarReporte()" style="background: #d32f2f; color: white; border: none; border-radius: 5px; padding: 5px 15px; cursor: pointer;">✕ Cerrar</button>
             </div>
-            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                <input type="date" id="reporteFechaInicio" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
-                <input type="date" id="reporteFechaFin" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                <input type="text" id="reporteClienteFiltro" placeholder="Cliente (opcional)" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 100px;">
+                <input type="text" id="reporteNumeroFiltro" placeholder="Número (opcional)" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 100px;">
+                <input type="date" id="reporteFechaInicio" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 150px;">
+                <input type="date" id="reporteFechaFin" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 150px;">
                 <button onclick="cargarReporte()" style="width: auto; padding: 8px 15px; background: #00a86b; color: white; border: none; border-radius: 5px;">🔍 Cargar</button>
                 <button onclick="descargarReportePDF()" style="width: auto; padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 5px;">📄 Descargar PDF</button>
             </div>
