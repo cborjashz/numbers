@@ -371,9 +371,14 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
     conn = None
     try:
         # === VALIDACIÓN DE PRECIO NEGATIVO ===
+        # === VALIDACIÓN DE PRECIO NEGATIVO Y CLIENTE ===
         for item in venta.items:
             if item["precio"] <= 0:
                 raise HTTPException(status_code=400, detail="Todos los precios deben ser mayores a 0")
+        
+        # Si el cliente llega vacío, lo forzamos a "Cliente Final"
+        if not venta.cliente or venta.cliente.strip() == "":
+            venta.cliente = "Cliente Final"
 
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         conn.autocommit = False
@@ -693,7 +698,7 @@ async def tablero_estado(
         resultado = cursor.fetchone()
         if not resultado or resultado[0] is None:
             conn.close()
-            return {}
+            return {"numeros": {}, "total": 0.0}
 
         id_mayorista = resultado[0]
 
@@ -701,13 +706,11 @@ async def tablero_estado(
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
-        # Si no se envió fecha, usar hoy
         if fecha:
             fecha_consulta = datetime.strptime(fecha, "%Y-%m-%d").date()
         else:
             fecha_consulta = ahora.date()
 
-        # Si no se envió cierre, calcular automático
         if cierre:
             cierre_consulta = cierre
         else:
@@ -731,11 +734,16 @@ async def tablero_estado(
         filas = cursor.fetchall()
         conn.close()
 
-        resultado = {}
+        numeros = {}
+        total_general = 0.0
         for num, monto in filas:
-            resultado[num] = float(monto)
+            numeros[num] = float(monto)
+            total_general += float(monto)
 
-        return resultado
+        return {
+            "numeros": numeros,
+            "total": total_general
+        }
 
     except Exception as e:
         if conn:
@@ -946,4 +954,89 @@ async def reporte_ventas_cliente_pdf(
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+@app.get("/api/reporte-cierre")
+async def reporte_cierre(
+    authorization: str = Header(None),
+    fecha: str = None,
+    cierre: str = None
+):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    id_usuario, nombre_vendedor = await validar_token(token)
+
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
+
+        # 1. Obtener id_mayorista del usuario (aunque no se use para filtrar, lo mantenemos por consistencia)
+        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] is None:
+            conn.close()
+            return {"vendedor": nombre_vendedor, "cierre": cierre, "numeros": {}, "total": 0.0}
+
+        # 2. Determinar fecha y cierre
+        managua_tz = timezone(timedelta(hours=-6))
+        ahora = datetime.now(managua_tz)
+
+        if fecha:
+            fecha_consulta = datetime.strptime(fecha, "%Y-%m-%d").date()
+        else:
+            fecha_consulta = ahora.date()
+
+        if not cierre:
+            raise HTTPException(status_code=400, detail="Debe seleccionar un cierre válido")
+
+        # 3. Consulta SQL: Agrupar por número individual, sumando el precio_unitario
+        cursor.execute("""
+            SELECT 
+                num_individual AS numero,
+                SUM((detalle->>'precio')::numeric) AS monto_total
+            FROM ventas v,
+            LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+            LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+            WHERE v.cierre_asignado = %s
+              AND v.id_usuario = %s
+              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
+            GROUP BY num_individual
+            ORDER BY num_individual ASC
+        """, (cierre, id_usuario, fecha_consulta))
+
+        filas = cursor.fetchall()
+        conn.close()
+
+        # 4. Construir el diccionario de resultados
+        numeros = {}
+        total_general = 0.0
+        for num, monto in filas:
+            numeros[num] = float(monto)
+            total_general += float(monto)
+
+        # 5. Asegurar que todos los números del 00 al 99 estén presentes (con 0 si no hay ventas)
+        for i in range(100):
+            num_str = f"{i:02d}"
+            if num_str not in numeros:
+                numeros[num_str] = 0.0
+
+        # 6. Ordenar los números de forma natural (00, 01, 02, ...)
+        numeros_ordenados = {k: numeros[k] for k in sorted(numeros.keys())}
+
+        return {
+            "vendedor": nombre_vendedor,
+            "cierre": cierre,
+            "fecha": fecha_consulta.strftime("%d-%m-%Y"),
+            "numeros": numeros_ordenados,
+            "total": total_general
+        }
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
