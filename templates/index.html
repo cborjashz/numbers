@@ -355,7 +355,6 @@
         }
 
         async function cargarRecibo(numReciboParam = null) {
-            // Si recibimos el número como parámetro, lo usamos; si no, leemos del input
             const numRecibo = numReciboParam || document.getElementById('reciboReferencia').value;
             if (!numRecibo) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Ingrese un número de recibo</span>';
@@ -388,24 +387,25 @@
         
                 const data = await res.json();
         
-                // Limpiar selección previa y tabla resumen
                 limpiarSeleccion();
 
-                // Agregar los números con sus precios a la tabla resumen y al tablero
-                // Agregar los números con sus precios a la tabla resumen y al tablero
                 data.items.forEach(item => {
                     const num = item.numero;
                     const precio = item.precio;
                     const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
                     if (btn) {
-                        // Siempre marcamos como seleccionado
                         btn.classList.add('selected');
-                        // Siempre agregamos a la tabla resumen (incluso si ya estaba)
                         agregarAResumen(num, precio);
                     }
                 });
         
                 document.getElementById('resultMsg').innerHTML = `<span class="success">✅ Recibo ${numRecibo} cargado! ${data.items.length} números con sus precios.</span>`;
+        
+                // Cierre automático del modal del reporte si está abierto
+                const reporteModal = document.getElementById('reporteModal');
+                if (reporteModal && reporteModal.style.display === 'flex') {
+                    cerrarReporte();
+                }
         
             } catch (error) {
                 document.getElementById('resultMsg').innerHTML = `<span class="error">❌ Error de conexión</span>`;

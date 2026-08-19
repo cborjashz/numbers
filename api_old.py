@@ -756,7 +756,9 @@ async def tablero_estado(
 async def reporte_ventas_cliente(
     authorization: str = Header(None),
     fecha_inicio: str = None,
-    fecha_fin: str = None
+    fecha_fin: str = None,
+    cliente_filtro: str = None,
+    numero_filtro: str = None
 ):
     # Validar token
     if not authorization or not authorization.startswith("Bearer "):
@@ -793,8 +795,8 @@ async def reporte_ventas_cliente(
         else:
             fecha_fin_dt = hoy
 
-        # 3. Consulta SQL: Agregamos num_recibo al SELECT y al GROUP BY
-        cursor.execute("""
+        # 3. Construir la consulta SQL base
+        sql = """
             SELECT 
                 v.num_recibo,
                 v.cliente,
@@ -805,14 +807,37 @@ async def reporte_ventas_cliente(
             WHERE v.id_mayorista = %s
               AND v.id_usuario = %s
               AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
+        """
+        params = [id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt]
+
+        # 4. Filtro por cliente (ILIKE)
+        if cliente_filtro and cliente_filtro.strip() != "":
+            sql += " AND v.cliente ILIKE %s"
+            params.append(f"%{cliente_filtro.strip()}%")
+
+        # 5. Filtro por número (búsqueda dentro del JSONB detalle_venta)
+        if numero_filtro and numero_filtro.strip() != "":
+            sql += """
+                AND EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(v.detalle_venta) AS detalle
+                    CROSS JOIN jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                    WHERE num_individual = %s
+                )
+            """
+            params.append(numero_filtro.strip())
+
+        # 6. Completar la consulta
+        sql += """
             GROUP BY v.num_recibo, v.cliente, v.cierre_asignado
             ORDER BY v.cliente, v.cierre_asignado
-        """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
+        """
 
+        cursor.execute(sql, params)
         filas = cursor.fetchall()
         conn.close()
 
-        # 4. Formatear respuesta incluyendo num_recibo
+        # 7. Formatear respuesta
         resultado = []
         for num_recibo, cliente, cierre, total_numeros, total_monto in filas:
             resultado.append({
@@ -1033,6 +1058,155 @@ async def reporte_cierre(
             "numeros": numeros_ordenados,
             "total": total_general
         }
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/reporte-cierre-pdf")
+async def reporte_cierre_pdf(
+    authorization: str = Header(None),
+    fecha: str = None,
+    cierre: str = None
+):
+    # Validar token
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Token no proporcionado")
+    token = authorization.replace("Bearer ", "")
+    id_usuario, nombre_vendedor = await validar_token(token)
+
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+        cursor.execute("SET TIMEZONE = 'America/Managua'")
+
+        # 1. Validar mayorista y obtener datos
+        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado = cursor.fetchone()
+        if not resultado or resultado[0] is None:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Usuario sin mayorista")
+
+        # 2. Determinar fecha y cierre
+        managua_tz = timezone(timedelta(hours=-6))
+        ahora = datetime.now(managua_tz)
+
+        if fecha:
+            fecha_consulta = datetime.strptime(fecha, "%Y-%m-%d").date()
+        else:
+            fecha_consulta = ahora.date()
+
+        if not cierre:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Debe seleccionar un cierre válido")
+
+        # 3. Consulta SQL para obtener los datos del cierre
+        cursor.execute("""
+            SELECT 
+                num_individual AS numero,
+                SUM((detalle->>'precio')::numeric) AS monto_total
+            FROM ventas v,
+            LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+            LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+            WHERE v.cierre_asignado = %s
+              AND v.id_usuario = %s
+              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
+            GROUP BY num_individual
+            ORDER BY num_individual ASC
+        """, (cierre, id_usuario, fecha_consulta))
+
+        filas = cursor.fetchall()
+        conn.close()
+
+        # 4. Construir diccionario de números y calcular total
+        numeros = {}
+        total_general = 0.0
+        for num, monto in filas:
+            numeros[num] = float(monto)
+            total_general += float(monto)
+
+        # 5. Generar PDF
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+
+        # Colores
+        color_oro = (0.85, 0.65, 0.13)
+        color_oscuro = (0.15, 0.15, 0.15)
+        color_gris = (0.4, 0.4, 0.4)
+
+        # === ENCABEZADO ===
+        c.setStrokeColor(color_oro)
+        c.setLineWidth(2)
+        c.line(50, height - 50, width - 50, height - 50)
+
+        c.setFont("Helvetica-Bold", 18)
+        c.setFillColor(color_oscuro)
+        c.drawCentredString(width / 2, height - 80, "REPORTE DE CIERRE")
+
+        c.setFont("Helvetica", 10)
+        c.setFillColor(color_gris)
+        c.drawCentredString(width / 2, height - 100, f"Generado el {datetime.now(managua_tz).strftime('%d-%m-%Y %H:%M:%S')}")
+
+        # === DATOS GENERALES ===
+        y = height - 140
+        line_height = 20
+        c.setFont("Helvetica-Bold", 11)
+        c.setFillColor(color_oscuro)
+        c.drawString(50, y, f"Vendedor: {nombre_vendedor}")
+        c.drawString(250, y, f"Cierre: {cierre}")
+        c.drawString(450, y, f"Fecha: {fecha_consulta.strftime('%d-%m-%Y')}")
+
+        # === DETALLE POR NÚMERO ===
+        y -= 40
+        c.setFont("Helvetica-Bold", 10)
+        c.setFillColor(color_oscuro)
+        c.drawString(50, y, "Número")
+        c.drawRightString(width - 50, y, "Monto")
+
+        c.setStrokeColor((0.8, 0.8, 0.8))
+        c.setLineWidth(0.5)
+        c.line(50, y - 5, width - 50, y - 5)
+
+        y -= 20
+        c.setFont("Helvetica", 10)
+        for num, monto in sorted(numeros.items()):
+            if y < 50:  # Salto de página
+                c.showPage()
+                y = height - 50
+                c.setFont("Helvetica", 10)
+            
+            c.drawString(50, y, num)
+            if monto > 0:
+                c.drawRightString(width - 50, y, f"L. {monto:.2f}")
+            y -= 15
+
+        # === TOTAL GENERAL ===
+        y -= 15
+        c.setStrokeColor(color_oro)
+        c.setLineWidth(1)
+        c.line(50, y - 5, width - 50, y - 5)
+
+        y -= 15
+        c.setFont("Helvetica-Bold", 14)
+        c.setFillColor(color_oscuro)
+        c.drawString(50, y, "TOTAL DEL CIERRE:")
+        c.setFont("Helvetica-Bold", 16)
+        c.setFillColor(color_oro)
+        c.drawRightString(width - 50, y, f"L. {total_general:.2f}")
+
+        c.save()
+        buffer.seek(0)
+
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=reporte_cierre_{fecha_consulta.strftime('%Y%m%d')}_{cierre.replace(' ', '_')}.pdf"}
+        )
 
     except Exception as e:
         if conn:

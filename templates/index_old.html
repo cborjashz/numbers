@@ -145,6 +145,13 @@
                 </select>
             </div>
 
+             <!-- Cuadro de resumen del día/cierre -->
+            <div id="resumenPDV" style="display: flex; gap: 15px; margin: 10px 0; padding: 10px 15px; background: #3b3b5c; border-radius: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; display: none;">
+                <div><strong>📅 Fecha:</strong> <span id="resumenFecha">-</span></div>
+                <div><strong>🕒 Cierre:</strong> <span id="resumenCierre">-</span></div>
+                <div><strong>💰 Total vendido:</strong> <span id="resumenTotalPDV" style="color: #ffd700; font-weight: bold;">L. 0.00</span></div>
+            </div>
+
             <!-- MODAL DE PRECIO POR NÚMERO -->
             <div id="precioModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
                 <div style="background: #2d2d44; padding: 20px; border-radius: 15px; width: 90%; max-width: 400px; color: white;">
@@ -284,10 +291,9 @@
         }
 
       
-
         async function actualizarMontosTablero() {
             const token = localStorage.getItem('loteria_token');
-            if (!token) return; // Si no hay token, no hacemos nada
+            if (!token) return;
 
             // Leer valores de los selectores
             const fecha = document.getElementById('fechaSelect').value;
@@ -316,12 +322,12 @@
 
                 const datos = await res.json();
 
-                // Recorrer todos los botones (00 al 99) y actualizar el monto
+                // Actualizar montos por número
                 for (let i = 0; i < 100; i++) {
                     const num = i.toString().padStart(2, '0');
                     const montoDiv = document.getElementById(`monto-${num}`);
                     if (montoDiv) {
-                        const monto = datos[num];
+                        const monto = datos.numeros[num];
                         if (monto && monto > 0) {
                             montoDiv.innerText = `L. ${monto.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                             montoDiv.style.color = '#ffd700';
@@ -331,6 +337,18 @@
                         }
                     }
                 }
+
+                // Actualizar el cuadro de resumen
+                const resumenDiv = document.getElementById('resumenPDV');
+                if (datos.total > 0) {
+                    resumenDiv.style.display = 'flex';
+                    document.getElementById('resumenFecha').innerText = fecha || 'Hoy';
+                    document.getElementById('resumenCierre').innerText = cierre || 'Automático';
+                    document.getElementById('resumenTotalPDV').innerText = `L. ${datos.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                } else {
+                    resumenDiv.style.display = 'none';
+                }
+
             } catch (error) {
                 console.error('Error al actualizar montos del tablero:', error);
             }
@@ -751,10 +769,11 @@
         }
 
         async function cargarReporte() {
+            const clienteFiltro = document.getElementById('reporteClienteFiltro').value;
+            const numeroFiltro = document.getElementById('reporteNumeroFiltro').value;
             const fechaInicio = document.getElementById('reporteFechaInicio').value;
             const fechaFin = document.getElementById('reporteFechaFin').value;
 
-            // Se corrige colspan a 5
             if (!fechaInicio || !fechaFin) {
                 document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff5555;">❌ Seleccione ambas fechas</td></tr>';
                 return;
@@ -763,13 +782,22 @@
             const token = localStorage.getItem('loteria_token');
             if (!token) {
                 document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff5555;">❌ Sesión expirada</td></tr>';
-            return;
+                return;
             }
 
             try {
-                const res = await fetch(`${API}/reporte-ventas-cliente?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`, {
+                // Construir la URL con los parámetros
+                let url = `${API}/reporte-ventas-cliente?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
+                if (clienteFiltro && clienteFiltro.trim() !== "") {
+                    url += `&cliente_filtro=${encodeURIComponent(clienteFiltro.trim())}`;
+                }
+                if (numeroFiltro && numeroFiltro.trim() !== "") {
+                    url += `&numero_filtro=${encodeURIComponent(numeroFiltro.trim())}`;
+                }
+
+                const res = await fetch(url, {
                     headers: { 'Authorization': 'Bearer ' + token }
-             });
+                });
 
                 if (!res.ok) {
                     if (res.status === 401) {
@@ -806,7 +834,6 @@
                     `;
                 });
 
-                // Fila Total General estructurada correctamente (colspan 3)
                 html += `
                     <tr style="background: #00a86b; color: white; font-weight: bold; font-size: 13px;">
                         <td colspan="3" style="padding: 8px 12px; text-align: right;">TOTAL GENERAL</td>
@@ -960,6 +987,56 @@
                 document.getElementById('reporteCierreResultado').innerHTML = '<div style="color: #ff5555; text-align: center; padding: 20px;">❌ Error de conexión al cargar el reporte.</div>';
             }
         }
+
+        async function descargarReporteCierrePDF() {
+            const fecha = document.getElementById('reporteCierreFecha').value;
+            const cierre = document.getElementById('reporteCierreSelect').value;
+
+            if (!fecha || !cierre) {
+                alert('❌ Seleccione una fecha y un cierre válido antes de descargar.');
+                return;
+            }
+
+            const token = localStorage.getItem('loteria_token');
+            if (!token) {
+                alert('❌ Sesión expirada. Por favor, vuelva a iniciar sesión.');
+                logout();
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API}/reporte-cierre-pdf?fecha=${fecha}&cierre=${encodeURIComponent(cierre)}`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        alert('❌ Sesión expirada. Por favor, vuelva a iniciar sesión.');
+                        logout();
+                        return;
+                    }
+                    const data = await res.json();
+                    alert('❌ ' + data.detail);
+                    return;
+                }
+
+                // Descargar el PDF
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const fechaStr = fecha.replace(/-/g, '');
+                const cierreStr = cierre.replace(/ /g, '_');
+                a.download = `reporte_cierre_${fechaStr}_${cierreStr}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+            } catch (error) {
+                alert('❌ Error de conexión al descargar el PDF.');
+            }
+        }
         
     </script>
     <!-- MODAL DE REPORTE -->
@@ -969,9 +1046,11 @@
                 <h2 style="margin: 0;">📊 Reporte de Ventas por Cliente</h2>
                 <button onclick="cerrarReporte()" style="background: #d32f2f; color: white; border: none; border-radius: 5px; padding: 5px 15px; cursor: pointer;">✕ Cerrar</button>
             </div>
-            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                <input type="date" id="reporteFechaInicio" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
-                <input type="date" id="reporteFechaFin" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                <input type="text" id="reporteClienteFiltro" placeholder="Cliente (opcional)" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 100px;">
+                <input type="text" id="reporteNumeroFiltro" placeholder="Número (opcional)" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 100px;">
+                <input type="date" id="reporteFechaInicio" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 150px;">
+                <input type="date" id="reporteFechaFin" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 150px;">
                 <button onclick="cargarReporte()" style="width: auto; padding: 8px 15px; background: #00a86b; color: white; border: none; border-radius: 5px;">🔍 Cargar</button>
                 <button onclick="descargarReportePDF()" style="width: auto; padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 5px;">📄 Descargar PDF</button>
             </div>
@@ -1010,9 +1089,7 @@
                     <option value="Cierre 3 (9pm)">Cierre 3 (9pm)</option>
                 </select>
                 <button onclick="cargarReporteCierre()" style="width: auto; padding: 8px 15px; background: #00a86b; color: white; border: none; border-radius: 5px;">🔍 Cargar</button>
-            </div>
-            <div id="reporteCierreResultado" style="max-height: 500px; overflow-y: auto;">
-                <!-- Aquí se cargará el reporte -->
+                <button onclick="descargarReporteCierrePDF()" style="width: auto; padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 5px;">📄 Descargar PDF</button>
             </div>
         </div>
     </div>    
