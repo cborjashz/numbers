@@ -100,6 +100,7 @@
                 <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
                     <button onclick="abrirReporteCierre()" style="width: auto; padding: 8px 15px; background: #9b59b6; color: white; font-size: 14px; border-radius: 8px;">📊 Reporte de Cierre</button>
                 </div>
+
             </div>
 
             <!-- Cargar recibo de referencia -->
@@ -120,6 +121,10 @@
             <!-- Botón para limpiar selección -->
             <div style="display: flex; justify-content: center; margin: 5px 0 15px 0;">
                 <button onclick="limpiarSeleccion()" style="width: auto; padding: 8px 25px; background: #d32f2f; color: white; font-size: 14px; border-radius: 8px;">🗑️ Limpiar Selección</button>
+                 <!-- Botón para abrir el importador de WhatsApp -->
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                    <button onclick="abrirWhatsAppModal()" style="width: auto; padding: 8px 15px; background: #25d366; color: white; font-size: 14px; border-radius: 8px; border: none; cursor: pointer;">📱 Importar WhatsApp</button>
+                </div>
             </div>
 
             <!-- Tablero de números -->
@@ -355,7 +360,6 @@
         }
 
         async function cargarRecibo(numReciboParam = null) {
-            // Si recibimos el número como parámetro, lo usamos; si no, leemos del input
             const numRecibo = numReciboParam || document.getElementById('reciboReferencia').value;
             if (!numRecibo) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Ingrese un número de recibo</span>';
@@ -388,24 +392,25 @@
         
                 const data = await res.json();
         
-                // Limpiar selección previa y tabla resumen
                 limpiarSeleccion();
 
-                // Agregar los números con sus precios a la tabla resumen y al tablero
-                // Agregar los números con sus precios a la tabla resumen y al tablero
                 data.items.forEach(item => {
                     const num = item.numero;
                     const precio = item.precio;
                     const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
                     if (btn) {
-                        // Siempre marcamos como seleccionado
                         btn.classList.add('selected');
-                        // Siempre agregamos a la tabla resumen (incluso si ya estaba)
                         agregarAResumen(num, precio);
                     }
                 });
         
                 document.getElementById('resultMsg').innerHTML = `<span class="success">✅ Recibo ${numRecibo} cargado! ${data.items.length} números con sus precios.</span>`;
+        
+                // Cierre automático del modal del reporte si está abierto
+                const reporteModal = document.getElementById('reporteModal');
+                if (reporteModal && reporteModal.style.display === 'flex') {
+                    cerrarReporte();
+                }
         
             } catch (error) {
                 document.getElementById('resultMsg').innerHTML = `<span class="error">❌ Error de conexión</span>`;
@@ -1037,6 +1042,173 @@
                 alert('❌ Error de conexión al descargar el PDF.');
             }
         }
+
+        // Funciones para el modal de WhatsApp
+        function abrirWhatsAppModal() {
+            document.getElementById('whatsappModal').style.display = 'flex';
+            document.getElementById('whatsappText').value = '';
+            document.getElementById('whatsappMsg').innerHTML = '';
+            document.getElementById('whatsappText').focus();
+        }
+
+        function cerrarWhatsAppModal() {
+            document.getElementById('whatsappModal').style.display = 'none';
+            document.getElementById('whatsappMsg').innerHTML = '';
+        }
+
+        function procesarWhatsApp() {
+            const texto = document.getElementById('whatsappText').value;
+            const msgDiv = document.getElementById('whatsappMsg');
+
+            if (!texto.trim()) {
+                msgDiv.innerHTML = '<span style="color: #ff5555;">❌ Por favor, pega un mensaje de WhatsApp válido.</span>';
+                return;
+            }
+
+            // Limpiar selección previa
+            limpiarSeleccion();
+
+            // Interpretar el texto
+            const items = interpretarTextoWhatsApp(texto);
+
+            if (items.length === 0) {
+                msgDiv.innerHTML = '<span style="color: #ff5555;">❌ No se encontraron números válidos en el texto. Verifica el formato.</span>';
+                return;
+            }
+
+            // Cargar los números en el tablero y en la tabla resumen
+            items.forEach(item => {
+                const num = item.numero;
+                const precio = item.precio;
+                const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
+                if (btn) {
+                    btn.classList.add('selected');
+                    agregarAResumen(num, precio);
+                }
+            });
+
+            // Mostrar mensaje de éxito y cerrar el modal después de 1.5 segundos
+            msgDiv.innerHTML = `<span style="color: #00a86b;">✅ ${items.length} números procesados correctamente.</span>`;
+            
+            setTimeout(() => {
+                cerrarWhatsAppModal();
+                document.getElementById('resultMsg').innerHTML = `<span class="success">✅ ${items.length} números importados desde WhatsApp.</span>`;
+                actualizarMontosTablero();
+            }, 1500);
+        }
+
+        function interpretarTextoWhatsApp(texto) {
+            const lineas = texto.split(/\r?\n/);
+            const items = [];
+
+            lineas.forEach(linea => {
+                let limpia = linea.trim();
+                if (!limpia) return;
+
+                // --- FORMATO 1: REVES Y DERECHO (grupos de 4 dígitos + precio) ---
+                // Ejemplo: "2772 7557 con 50 lps" → 27,72,75,57 a 50
+                // Ejemplo: "6446 0330 80 con 45 lps" → 64,46,03,30,80 a 45
+                const revesDerechoRegex = /(\d{4}\s+\d{4}(?:\s+\d{4})*)\s+(?:con|a|de|por|)\s*(\d+(?:\.\d+)?)\s*(?:lps|lempiras?)?/i;
+                let match = limpia.match(revesDerechoRegex);
+                if (match) {
+                    const grupos = match[1].trim().split(/\s+/);
+                    const precio = parseFloat(match[2]);
+                    if (precio > 0) {
+                        grupos.forEach(grupo => {
+                            // Dividir el grupo de 4 dígitos en dos números de 2 dígitos
+                            const num1 = grupo.substring(0, 2);
+                            const num2 = grupo.substring(2, 4);
+                            // Validar que sean números de 00 a 99
+                            const val1 = parseInt(num1, 10);
+                            const val2 = parseInt(num2, 10);
+                            if (!isNaN(val1) && val1 >= 0 && val1 <= 99) {
+                                items.push({ numero: num1, precio: precio });
+                            }
+                            if (!isNaN(val2) && val2 >= 0 && val2 <= 99) {
+                                items.push({ numero: num2, precio: precio });
+                            }
+                        });
+                        return; // Ya procesamos esta línea
+                    }
+                }
+
+                // --- FORMATO 2: PLECAS (número/precio separados por barra) ---
+                // Ejemplo: "19/10 29/10 28/10" → 19 a 10, 29 a 10, 28 a 10
+                const plecasRegex = /(\d{1,2})\/(\d+(?:\.\d+)?)/g;
+                let plecaMatch;
+                let encontradoPlecas = false;
+                while ((plecaMatch = plecasRegex.exec(limpia)) !== null) {
+                    const numero = plecaMatch[1].padStart(2, '0');
+                    const precio = parseFloat(plecaMatch[2]);
+                    if (precio > 0 && parseInt(numero, 10) >= 0 && parseInt(numero, 10) <= 99) {
+                        items.push({ numero: numero, precio: precio });
+                        encontradoPlecas = true;
+                    }
+                }
+                if (encontradoPlecas) return; // Ya procesamos esta línea
+
+                // --- FORMATO 3: SÍMBOLO > o < (precio > números separados por puntos) ---
+                // Ejemplo: "10>26.62.03.30.56.65.00.11" → 10 a 26,62,03,...
+                // Ejemplo: "20<46.64" → 20 a 46,64
+                const simboloRegex = /^(\d+(?:\.\d+)?)\s*([<>])\s*([\d.]+)$/;
+                let simMatch = limpia.match(simboloRegex);
+                if (simMatch) {
+                    const precio = parseFloat(simMatch[1]);
+                    const numerosStr = simMatch[3];
+                    if (precio > 0) {
+                        const numeros = numerosStr.split('.').filter(n => n !== '');
+                        numeros.forEach(num => {
+                            const val = parseInt(num, 10);
+                            if (!isNaN(val) && val >= 0 && val <= 99) {
+                                items.push({ numero: num.padStart(2, '0'), precio: precio });
+                            }
+                        });
+                        return; // Ya procesamos esta línea
+                    }
+                }
+
+                // --- FORMATO 4: "DE" (números + "de" + precio) ---
+                // Ejemplo: "78 de 50" → 78 a 50
+                // Ejemplo: "03 de 10" → 03 a 10
+                const deRegex = /^([\d\s,]+)\s+de\s+(\d+(?:\.\d+)?)/i;
+                let deMatch = limpia.match(deRegex);
+                if (deMatch) {
+                    const numerosStr = deMatch[1].trim();
+                    const precio = parseFloat(deMatch[2]);
+                    if (precio > 0) {
+                        // Separar por comas o espacios
+                        const numeros = numerosStr.split(/[\s,]+/).filter(n => n !== '');
+                        numeros.forEach(num => {
+                            const val = parseInt(num, 10);
+                            if (!isNaN(val) && val >= 0 && val <= 99) {
+                                items.push({ numero: num.padStart(2, '0'), precio: precio });
+                            }
+                        });
+                        return; // Ya procesamos esta línea
+                    }
+                }
+
+                // --- FORMATO FALLBACK: Último intento (números + precio al final) ---
+                // Si no encajó en ningún formato, intentamos detectar números al inicio y precio al final
+                const fallbackRegex = /^([\d\s,]+)\s+(\d+(?:\.\d+)?)\s*(?:lps|lempiras?)?$/i;
+                let fallMatch = limpia.match(fallbackRegex);
+                if (fallMatch) {
+                    const numerosStr = fallMatch[1].trim();
+                    const precio = parseFloat(fallMatch[2]);
+                    if (precio > 0) {
+                        const numeros = numerosStr.split(/[\s,]+/).filter(n => n !== '');
+                        numeros.forEach(num => {
+                            const val = parseInt(num, 10);
+                            if (!isNaN(val) && val >= 0 && val <= 99) {
+                                items.push({ numero: num.padStart(2, '0'), precio: precio });
+                            }
+                        });
+                    }
+                }
+            });
+
+            return items;
+        }        
         
     </script>
     <!-- MODAL DE REPORTE -->
@@ -1090,6 +1262,25 @@
                 </select>
                 <button onclick="cargarReporteCierre()" style="width: auto; padding: 8px 15px; background: #00a86b; color: white; border: none; border-radius: 5px;">🔍 Cargar</button>
                 <button onclick="descargarReporteCierrePDF()" style="width: auto; padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 5px;">📄 Descargar PDF</button>
+            </div>
+        </div>
+    </div> 
+    
+    <!-- MODAL DE IMPORTACIÓN WHATSAPP -->
+    <div id="whatsappModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: #2d2d44; padding: 25px; border-radius: 15px; width: 90%; max-width: 600px; color: white;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                <h2 style="margin: 0;">📱 Importar desde WhatsApp</h2>
+                <button onclick="cerrarWhatsAppModal()" style="background: #d32f2f; color: white; border: none; border-radius: 5px; padding: 5px 15px; cursor: pointer;">✕ Cerrar</button>
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label style="font-size: 14px; display: block; margin-bottom: 5px;">Pega aquí el mensaje de WhatsApp:</label>
+                <textarea id="whatsappText" rows="8" style="width: 100%; padding: 10px; background: #3b3b5c; color: white; border: none; border-radius: 8px; font-size: 14px; resize: vertical; box-sizing: border-box;" placeholder="Ejemplo:&#10;50 a 10&#10;27 a 15&#10;71,72,73,74,75,76,77,78,79 a 25"></textarea>
+            </div>
+            <div id="whatsappMsg" style="margin-bottom: 10px; text-align: center; font-weight: bold;"></div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button onclick="cerrarWhatsAppModal()" style="background: #555; color: white; border: none; border-radius: 5px; padding: 10px 20px; cursor: pointer;">Cancelar</button>
+                <button onclick="procesarWhatsApp()" style="background: #00a86b; color: white; border: none; border-radius: 5px; padding: 10px 20px; cursor: pointer; font-weight: bold;">🧠 Procesar</button>
             </div>
         </div>
     </div>    

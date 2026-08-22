@@ -205,7 +205,6 @@ def generar_recibo_pdf(
 async def read_root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
-# ===== FUNCIÓN AUXILIAR PARA VALIDAR TOKEN =====
 async def validar_token(token: str):
     """
     Valida que el token exista, esté activo, no haya expirado,
@@ -241,10 +240,19 @@ async def validar_token(token: str):
 
         ahora = datetime.now(timezone(timedelta(hours=-6)))
 
-        # Verificar expiración del token
+        # Verificar expiración del token (si pasó 30 minutos de inactividad, se cierra)
         if fecha_expiracion_token < ahora:
-            # Opcional: podríamos invalidar la sesión aquí
-            raise HTTPException(status_code=401, detail="Token expirado")
+            # Marcar la sesión como inactiva
+            conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE sesiones_activas
+                SET activo = FALSE
+                WHERE token = %s AND activo = TRUE
+            """, (token,))
+            conn.commit()
+            conn.close()
+            raise HTTPException(status_code=401, detail="Token expirado por inactividad")
 
         # Verificar que el usuario esté activo
         if not usuario_activo:
@@ -253,6 +261,18 @@ async def validar_token(token: str):
         # Verificar que el usuario no haya expirado
         if fecha_expiracion_usuario and fecha_expiracion_usuario < ahora:
             raise HTTPException(status_code=401, detail="Licencia del usuario expirada")
+
+        # Actualizar la fecha de expiración (renovar por 30 minutos más)
+        conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+        cursor = conn.cursor()
+        nueva_expiracion = ahora + timedelta(minutes=30)
+        cursor.execute("""
+            UPDATE sesiones_activas
+            SET fecha_expiracion = %s
+            WHERE token = %s AND activo = TRUE
+        """, (nueva_expiracion, token))
+        conn.commit()
+        conn.close()
 
         return id_usuario, nombre_usuario
 
@@ -314,7 +334,7 @@ async def login(data: LoginRequest):
         token = secrets.token_hex(32)
 
         # 6. Definir expiración del token
-        expiracion_token = ahora + timedelta(hours=8)
+        expiracion_token = ahora + timedelta(minutes=45)
 
         # 7. Insertar la nueva sesión
         cursor.execute("""
