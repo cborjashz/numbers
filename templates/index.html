@@ -447,15 +447,11 @@
                     return;
                 }
 
+                // Abrir el PDF en una nueva pestaña (vista previa automática)
                 const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `recibo_${numRecibo}.pdf`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
+                const pdfUrl = window.URL.createObjectURL(blob);
+                window.open(pdfUrl, '_blank');
+                window.URL.revokeObjectURL(pdfUrl);
 
                 document.getElementById('resultMsg').innerHTML = `<span class="success">✅ Recibo ${numRecibo} reimpreso exitosamente!</span>`;
 
@@ -730,17 +726,13 @@
             // ... el resto del código (descarga del PDF, limpieza) sigue igual ...
             
             if (res.ok) {
+                // Abrir el PDF en una nueva pestaña (vista previa automática)
                 const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `recibo_${Date.now()}.pdf`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
+                const pdfUrl = window.URL.createObjectURL(blob);
+                window.open(pdfUrl, '_blank');
+                window.URL.revokeObjectURL(pdfUrl);
                 
-                document.getElementById('resultMsg').innerHTML = '<span class="success">✅ Venta exitosa! El recibo se ha descargado.</span>';
+                document.getElementById('resultMsg').innerHTML = '<span class="success">✅ Venta exitosa! El recibo se ha mostrado en una nueva pestaña.</span>';
                 
                 // Limpiar todo
                 limpiarSeleccion();
