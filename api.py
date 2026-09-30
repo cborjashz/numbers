@@ -41,6 +41,7 @@ def calcular_cierre(hora_venta: int) -> str:
     else:
         return "Cierre 1 (11am - Día siguiente)"
 
+
 def generar_recibo_pdf(
     num_recibo: int, 
     fecha_emision: str, 
@@ -64,7 +65,6 @@ def generar_recibo_pdf(
     content_width = width - (margin_x * 2)
 
     # Tamaño de fuente único para todo el recibo
-    FUENTE_TITULO = "Helvetica-Bold"
     FUENTE_NORMAL = "Helvetica"
     TAMANO_FUENTE = 20
 
@@ -74,14 +74,14 @@ def generar_recibo_pdf(
     c.line(margin_x, height - 50, width - margin_x, height - 50)
 
     # Título principal
-    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_oscuro)
     c.drawCentredString(width / 2, height - 90, "COMPROBANTE DE COMPRA")
 
     # Subtítulo/Estado
-    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_oro)
-    c.drawCentredString(width / 2, height - 120, f"SISTEMA DE LOTERÍA • {cierre.upper()}")
+    c.drawCentredString(width / 2, height - 120, cierre.upper())
 
     # Separador
     c.setStrokeColor((0.8, 0.8, 0.8))
@@ -93,30 +93,27 @@ def generar_recibo_pdf(
     line_height = 30
 
     # Columna 1
-    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_gris)
     c.drawString(margin_x, y_meta, "CLIENTE:")
     c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_oscuro)
     c.drawString(margin_x + 130, y_meta, cliente.title()[:15])
 
-    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
-    c.setFillColor(color_gris)
-    c.drawString(margin_x, y_meta - line_height, "VENDEDOR:")
     c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
-    c.setFillColor(color_oscuro)
-    c.drawString(margin_x + 160, y_meta - line_height, vendedor[:15])
+    c.setFillColor(color_gris)
+    c.drawString(margin_x, y_meta - line_height, vendedor[:15])
 
     # Columna 2
     col2_x = width - margin_x - 350
-    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_gris)
     c.drawString(col2_x, y_meta, "RECIBO N°:")
     c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_oscuro)
     c.drawString(col2_x + 150, y_meta, str(num_recibo))
 
-    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_gris)
     c.drawString(col2_x, y_meta - line_height, "FECHA:")
     c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
@@ -131,7 +128,7 @@ def generar_recibo_pdf(
 
     # Encabezado de la tabla de ítems
     y_table = y_line - 30
-    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_oscuro)
     c.drawString(margin_x, y_table, "DETALLE DE JUGADAS")
 
@@ -151,14 +148,13 @@ def generar_recibo_pdf(
         total_numeros_jugados += cant_numeros
         subtotal_grupo = precio * cant_numeros
 
-        # Verificar si hay espacio para al menos la etiqueta del grupo
         if y < 100:
             c.showPage()
             y = height - 100
-            c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
+            c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
 
         # Etiqueta de precio y cantidad
-        c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
+        c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
         c.setFillColor(color_oscuro)
         etiqueta = f"{cant_numeros} num. a L. {precio:.2f} c/u:"
         c.drawString(margin_x, y, etiqueta)
@@ -173,7 +169,6 @@ def generar_recibo_pdf(
         c.setFillColor((0.25, 0.25, 0.25))
 
         for i in range(0, len(numeros), MAX_NUMEROS_POR_FILA):
-            # Verificar si hay espacio para la siguiente fila de números
             if y < 80:
                 c.showPage()
                 y = height - 100
@@ -183,10 +178,9 @@ def generar_recibo_pdf(
             c.drawString(margin_x + 20, y, texto_bloque)
             y -= 28
 
-        y -= 15  # Espacio entre grupos
+        y -= 15
 
     # === RESUMEN Y PIE DE PÁGINA ===
-    # Verificar si hay espacio para el bloque final
     if y < 200:
         c.showPage()
         y = height - 100
@@ -202,27 +196,20 @@ def generar_recibo_pdf(
     c.setFillColor(color_gris)
     c.drawString(margin_x, y_totales, f"Cantidad total de números: {total_numeros_jugados}")
 
-    # Cuadro destacado para el TOTAL
+    # Total
     c.setFillColor(color_oscuro)
-    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
-    c.drawString(margin_x, y_totales - 40, "TOTAL A PAGAR:")
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
+    c.drawString(margin_x, y_totales - 40, "Total L.")
 
-    c.setFont(FUENTE_TITULO, TAMANO_FUENTE + 8)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE + 8)
     c.setFillColor(color_oro)
-    c.drawRightString(width - margin_x, y_totales - 40, f"L. {total:.2f}")
-
-    # Línea inferior final
-    c.setStrokeColor((0.8, 0.8, 0.8))
-    c.setLineWidth(0.5)
-    c.line(margin_x, y_totales - 70, width - margin_x, y_totales - 70)
-
-    c.setFont("Helvetica-Oblique", 14)
-    c.setFillColor(color_gris)
-    c.drawCentredString(width / 2, y_totales - 95, "¡Gracias por su compra y buena suerte!")
+    c.drawRightString(width - margin_x, y_totales - 40, f"{total:.2f}")
 
     c.save()
     buffer.seek(0)
     return buffer
+
+
 # ===== RUTAS WEB =====
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
