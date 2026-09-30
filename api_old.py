@@ -136,17 +136,17 @@ def generar_recibo_pdf(
     c.setLineWidth(0.5)
     c.line(margin_x, y_table - 6, width - margin_x, y_table - 6)
 
-    # === NÚMEROS JUGADOS (AGRUPADOS POR PRECIO) ===
+    # === NÚMEROS JUGADOS (AGRUPADOS POR PRECIO, EN BLOQUES DE 15) ===
     y = y_table - 25
     precios_ordenados = sorted(agrupado.keys(), reverse=True)
     total_numeros_jugados = 0
+    MAX_NUMEROS_POR_FILA = 15
 
     for precio in precios_ordenados:
         numeros = agrupado[precio]
         cant_numeros = len(numeros)
         total_numeros_jugados += cant_numeros
         subtotal_grupo = precio * cant_numeros
-        texto_numeros = ", ".join(numeros)
 
         # Etiqueta de precio y cantidad
         c.setFont("Helvetica-Bold", 10)
@@ -158,13 +158,18 @@ def generar_recibo_pdf(
         c.setFont("Helvetica", 10)
         c.drawRightString(width - margin_x, y, f"L. {subtotal_grupo:.2f}")
 
-        # Listado de números jugados (indentado hacia abajo)
+        # Listado de números jugados (dividido en bloques de 15 máximo)
         y -= 14
         c.setFont("Helvetica", 10)
         c.setFillColor((0.25, 0.25, 0.25))
-        c.drawString(margin_x + 15, y, texto_numeros)
 
-        y -= 22  # Espacio entre grupos
+        for i in range(0, len(numeros), MAX_NUMEROS_POR_FILA):
+            bloque = numeros[i:i + MAX_NUMEROS_POR_FILA]
+            texto_bloque = ", ".join(bloque)
+            c.drawString(margin_x + 15, y, texto_bloque)
+            y -= 14
+
+        y -= 8  # Espacio entre grupos
 
     # === RESUMEN Y PIE DE PÁGINA ===
     c.setStrokeColor(color_oro)

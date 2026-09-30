@@ -55,92 +55,95 @@ def generar_recibo_pdf(
     width, height = letter
 
     # Colores base
-    color_oro = (0.85, 0.65, 0.13)      # Un dorado más sobrio y elegante
-    color_oscuro = (0.15, 0.15, 0.15)    # Negro suave para texto
-    color_gris = (0.4, 0.4, 0.4)        # Gris para etiquetas secundarias
+    color_oro = (0.85, 0.65, 0.13)
+    color_oscuro = (0.15, 0.15, 0.15)
+    color_gris = (0.4, 0.4, 0.4)
 
     # Margen izquierdo y ancho útil
     margin_x = 50
     content_width = width - (margin_x * 2)
 
+    # Tamaño de fuente único para todo el recibo
+    FUENTE_TITULO = "Helvetica-Bold"
+    FUENTE_NORMAL = "Helvetica"
+    TAMANO_FUENTE = 20
+
     # === ENCABEZADO ===
-    # Marco superior decorativo
     c.setStrokeColor(color_oro)
     c.setLineWidth(3)
-    c.line(margin_x, height - 40, width - margin_x, height - 40)
+    c.line(margin_x, height - 50, width - margin_x, height - 50)
 
     # Título principal
-    c.setFont("Helvetica-Bold", 20)
+    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
     c.setFillColor(color_oscuro)
-    c.drawCentredString(width / 2, height - 70, "COMPROBANTE DE COMPRA")
+    c.drawCentredString(width / 2, height - 90, "COMPROBANTE DE COMPRA")
 
     # Subtítulo/Estado
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
     c.setFillColor(color_oro)
-    c.drawCentredString(width / 2, height - 88, f"SISTEMA DE LOTERÍA • {cierre.upper()}")
+    c.drawCentredString(width / 2, height - 120, f"SISTEMA DE LOTERÍA • {cierre.upper()}")
 
     # Separador
     c.setStrokeColor((0.8, 0.8, 0.8))
     c.setLineWidth(0.5)
-    c.line(margin_x, height - 100, width - margin_x, height - 100)
+    c.line(margin_x, height - 140, width - margin_x, height - 140)
 
-    # === DATOS GENERALES (Estructurado en 2 columnas) ===
-    y_meta = height - 125
-    line_height = 18
+    # === DATOS GENERALES (2 columnas) ===
+    y_meta = height - 175
+    line_height = 30
 
-    # Columna 1 (Cliente y Vendedor)
-    c.setFont("Helvetica-Bold", 10)
+    # Columna 1
+    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
     c.setFillColor(color_gris)
     c.drawString(margin_x, y_meta, "CLIENTE:")
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_oscuro)
-    c.drawString(margin_x + 65, y_meta, cliente.title())
+    c.drawString(margin_x + 130, y_meta, cliente.title()[:15])
 
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
     c.setFillColor(color_gris)
     c.drawString(margin_x, y_meta - line_height, "VENDEDOR:")
-    c.setFont("Helvetica", 11)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_oscuro)
-    c.drawString(margin_x + 65, y_meta - line_height, vendedor)
+    c.drawString(margin_x + 160, y_meta - line_height, vendedor[:15])
 
-    # Columna 2 (Recibo y Fecha)
-    col2_x = width / 2 + 40
-    c.setFont("Helvetica-Bold", 10)
+    # Columna 2
+    col2_x = width - margin_x - 350
+    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
     c.setFillColor(color_gris)
     c.drawString(col2_x, y_meta, "RECIBO N°:")
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_oscuro)
-    c.drawString(col2_x + 75, y_meta, str(num_recibo))
+    c.drawString(col2_x + 150, y_meta, str(num_recibo))
 
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
     c.setFillColor(color_gris)
     c.drawString(col2_x, y_meta - line_height, "FECHA:")
-    c.setFont("Helvetica", 11)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_oscuro)
-    c.drawString(col2_x + 75, y_meta - line_height, fecha_emision)
+    c.drawString(col2_x + 150, y_meta - line_height, fecha_emision[:16])
 
     # Separador para detalle
-    y_line = y_meta - (line_height * 2) - 10
+    y_line = y_meta - (line_height * 2) - 15
     c.setStrokeColor(color_oro)
     c.setLineWidth(1)
     c.line(margin_x, y_line, width - margin_x, y_line)
 
     # Encabezado de la tabla de ítems
-    y_table = y_line - 20
-    c.setFont("Helvetica-Bold", 11)
+    y_table = y_line - 30
+    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
     c.setFillColor(color_oscuro)
     c.drawString(margin_x, y_table, "DETALLE DE JUGADAS")
-    c.drawRightString(width - margin_x, y_table, "SUBTOTAL")
 
     c.setStrokeColor((0.85, 0.85, 0.85))
     c.setLineWidth(0.5)
-    c.line(margin_x, y_table - 6, width - margin_x, y_table - 6)
+    c.line(margin_x, y_table - 8, width - margin_x, y_table - 8)
 
-    # === NÚMEROS JUGADOS (AGRUPADOS POR PRECIO, EN BLOQUES DE 15) ===
-    y = y_table - 25
+    # === NÚMEROS JUGADOS (AGRUPADOS POR PRECIO, EN BLOQUES DE 10) ===
+    y = y_table - 35
     precios_ordenados = sorted(agrupado.keys(), reverse=True)
     total_numeros_jugados = 0
-    MAX_NUMEROS_POR_FILA = 15
+    MAX_NUMEROS_POR_FILA = 10
 
     for precio in precios_ordenados:
         numeros = agrupado[precio]
@@ -148,63 +151,78 @@ def generar_recibo_pdf(
         total_numeros_jugados += cant_numeros
         subtotal_grupo = precio * cant_numeros
 
+        # Verificar si hay espacio para al menos la etiqueta del grupo
+        if y < 100:
+            c.showPage()
+            y = height - 100
+            c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
+
         # Etiqueta de precio y cantidad
-        c.setFont("Helvetica-Bold", 10)
+        c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
         c.setFillColor(color_oscuro)
         etiqueta = f"{cant_numeros} num. a L. {precio:.2f} c/u:"
         c.drawString(margin_x, y, etiqueta)
 
         # Monto acumulado por grupo
-        c.setFont("Helvetica", 10)
+        c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
         c.drawRightString(width - margin_x, y, f"L. {subtotal_grupo:.2f}")
 
-        # Listado de números jugados (dividido en bloques de 15 máximo)
-        y -= 14
-        c.setFont("Helvetica", 10)
+        # Listado de números jugados (dividido en bloques de 10 máximo)
+        y -= 28
+        c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
         c.setFillColor((0.25, 0.25, 0.25))
 
         for i in range(0, len(numeros), MAX_NUMEROS_POR_FILA):
+            # Verificar si hay espacio para la siguiente fila de números
+            if y < 80:
+                c.showPage()
+                y = height - 100
+
             bloque = numeros[i:i + MAX_NUMEROS_POR_FILA]
             texto_bloque = ", ".join(bloque)
-            c.drawString(margin_x + 15, y, texto_bloque)
-            y -= 14
+            c.drawString(margin_x + 20, y, texto_bloque)
+            y -= 28
 
-        y -= 8  # Espacio entre grupos
+        y -= 15  # Espacio entre grupos
 
     # === RESUMEN Y PIE DE PÁGINA ===
+    # Verificar si hay espacio para el bloque final
+    if y < 200:
+        c.showPage()
+        y = height - 100
+
     c.setStrokeColor(color_oro)
     c.setLineWidth(1)
-    c.line(margin_x, y + 10, width - margin_x, y + 10)
+    c.line(margin_x, y + 20, width - margin_x, y + 20)
 
-    y_totales = y - 15
+    y_totales = y - 10
 
     # Cantidad total de números
-    c.setFont("Helvetica", 11)
+    c.setFont(FUENTE_NORMAL, TAMANO_FUENTE)
     c.setFillColor(color_gris)
     c.drawString(margin_x, y_totales, f"Cantidad total de números: {total_numeros_jugados}")
 
     # Cuadro destacado para el TOTAL
     c.setFillColor(color_oscuro)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(margin_x, y_totales - 25, "TOTAL A PAGAR:")
+    c.setFont(FUENTE_TITULO, TAMANO_FUENTE)
+    c.drawString(margin_x, y_totales - 40, "TOTAL A PAGAR:")
 
-    c.setFont("Helvetica-Bold", 20)
+    c.setFont(FUENTE_TITULO, TAMANO_FUENTE + 8)
     c.setFillColor(color_oro)
-    c.drawRightString(width - margin_x, y_totales - 25, f"L. {total:.2f}")
+    c.drawRightString(width - margin_x, y_totales - 40, f"L. {total:.2f}")
 
     # Línea inferior final
     c.setStrokeColor((0.8, 0.8, 0.8))
     c.setLineWidth(0.5)
-    c.line(margin_x, y_totales - 40, width - margin_x, y_totales - 40)
+    c.line(margin_x, y_totales - 70, width - margin_x, y_totales - 70)
 
-    c.setFont("Helvetica-Oblique", 9)
+    c.setFont("Helvetica-Oblique", 14)
     c.setFillColor(color_gris)
-    c.drawCentredString(width / 2, y_totales - 55, "¡Gracias por su compra y buena suerte!")
+    c.drawCentredString(width / 2, y_totales - 95, "¡Gracias por su compra y buena suerte!")
 
     c.save()
     buffer.seek(0)
     return buffer
-
 # ===== RUTAS WEB =====
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
