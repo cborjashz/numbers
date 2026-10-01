@@ -66,7 +66,8 @@ def generar_recibo_pdf(
     # Fuentes y tamaños
     FUENTE_NORMAL = "Helvetica"
     TAMANO_GRANDE = 20
-    TAMANO_MEDIANO = 14
+    TAMANO_NUMEROS = 28
+    TAMANO_PRECIO_SUBTOTAL = 18
     TAMANO_PEQUENO = 11
 
     # === ENCABEZADO ===
@@ -147,7 +148,7 @@ def generar_recibo_pdf(
 
             if idx == 0:
                 # Números en tamaño GRANDE
-                c.setFont(FUENTE_NORMAL, TAMANO_GRANDE)
+                c.setFont(FUENTE_NORMAL, TAMANO_NUMEROS)
                 c.setFillColor(color_oscuro)
                 c.drawString(margin_x, y, texto_bloque)
 
@@ -157,17 +158,17 @@ def generar_recibo_pdf(
                 else:
                     precio_str = f"{precio:.2f}"
 
-                # Texto "A precio = subtotal" en tamaño PEQUEÑO, alineado a la derecha
-                c.setFont(FUENTE_NORMAL, TAMANO_PEQUENO)
+                # Texto "A precio = subtotal" en tamaño MEDIANO, alineado a la derecha
+                c.setFont(FUENTE_NORMAL, TAMANO_PRECIO_SUBTOTAL)
                 c.setFillColor(color_oscuro)
                 texto_derecho = f"A {precio_str} = {subtotal_grupo:.2f}"
                 c.drawRightString(width - margin_x, y, texto_derecho)
             else:
-                c.setFont(FUENTE_NORMAL, TAMANO_GRANDE)
+                c.setFont(FUENTE_NORMAL, TAMANO_NUMEROS)
                 c.setFillColor(color_oscuro)
                 c.drawString(margin_x, y, texto_bloque)
 
-            y -= 30
+            y -= 38
 
         y -= 15
 
@@ -205,18 +206,19 @@ def generar_recibo_pdf(
     c.setLineWidth(0.5)
     c.line(margin_x, y_pie + 20, width - margin_x, y_pie + 20)
 
-    c.setFont(FUENTE_NORMAL, TAMANO_PEQUENO)
+    c.setFont(FUENTE_NORMAL, TAMANO_GRANDE)
     c.setFillColor(color_oscuro)
     c.drawString(margin_x, y_pie, vendedor)
 
     fecha_impresion = datetime.now(timezone(timedelta(hours=-6))).strftime("%d-%m-%Y %H:%M:%S")
-    c.setFont(FUENTE_NORMAL, TAMANO_PEQUENO)
+    c.setFont(FUENTE_NORMAL, TAMANO_GRANDE)
     c.setFillColor(color_gris)
     c.drawRightString(width - margin_x, y_pie, fecha_impresion)
 
     c.save()
     buffer.seek(0)
     return buffer
+
 
 # ===== RUTAS WEB =====
 @app.get("/", response_class=HTMLResponse)
