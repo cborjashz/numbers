@@ -56,7 +56,8 @@ def generar_recibo_pdf(
     width, height = letter
 
     # Colores base
-    color_oro = (0.85, 0.65, 0.13)
+    color_oro = (0.85, 0.65, 0.13)          # Para las líneas decorativas
+    color_verde_oscuro = (0.10, 0.35, 0.20)  # Nuevo color sólido
     color_oscuro = (0.15, 0.15, 0.15)
     color_gris = (0.4, 0.4, 0.4)
 
@@ -65,9 +66,11 @@ def generar_recibo_pdf(
 
     # Fuentes y tamaños
     FUENTE_NORMAL = "Helvetica"
+    FUENTE_NEGRITA = "Helvetica-Bold"
     TAMANO_GRANDE = 20
     TAMANO_NUMEROS = 28
-    TAMANO_PRECIO_SUBTOTAL = 18
+    TAMANO_PRECIO_SUBTOTAL = 20
+    TAMANO_PIE = 22
     TAMANO_PEQUENO = 11
 
     # === ENCABEZADO ===
@@ -79,8 +82,8 @@ def generar_recibo_pdf(
     c.setFillColor(color_oscuro)
     c.drawCentredString(width / 2, height - 90, "COMPROBANTE DE COMPRA")
 
-    c.setFont(FUENTE_NORMAL, TAMANO_GRANDE)
-    c.setFillColor(color_oro)
+    c.setFont(FUENTE_NEGRITA, TAMANO_GRANDE)
+    c.setFillColor(color_verde_oscuro)
     c.drawCentredString(width / 2, height - 120, cierre.upper())
 
     c.setStrokeColor((0.8, 0.8, 0.8))
@@ -147,19 +150,16 @@ def generar_recibo_pdf(
             texto_bloque = ", ".join(bloque)
 
             if idx == 0:
-                # Números en tamaño GRANDE
                 c.setFont(FUENTE_NORMAL, TAMANO_NUMEROS)
                 c.setFillColor(color_oscuro)
                 c.drawString(margin_x, y, texto_bloque)
 
-                # Formatear el precio (sin decimales si es entero)
                 if precio == int(precio):
                     precio_str = str(int(precio))
                 else:
                     precio_str = f"{precio:.2f}"
 
-                # Texto "A precio = subtotal" en tamaño MEDIANO, alineado a la derecha
-                c.setFont(FUENTE_NORMAL, TAMANO_PRECIO_SUBTOTAL)
+                c.setFont(FUENTE_NEGRITA, TAMANO_PRECIO_SUBTOTAL)
                 c.setFillColor(color_oscuro)
                 texto_derecho = f"A {precio_str} = {subtotal_grupo:.2f}"
                 c.drawRightString(width - margin_x, y, texto_derecho)
@@ -191,8 +191,8 @@ def generar_recibo_pdf(
     c.setFont(FUENTE_NORMAL, TAMANO_GRANDE)
     c.drawString(margin_x, y_totales - 40, "Total L.")
 
-    c.setFont(FUENTE_NORMAL, TAMANO_GRANDE + 8)
-    c.setFillColor(color_oro)
+    c.setFont(FUENTE_NEGRITA, TAMANO_GRANDE + 8)
+    c.setFillColor(color_verde_oscuro)
     c.drawRightString(width - margin_x, y_totales - 40, f"{total:.2f}")
 
     # === PIE DE PÁGINA ===
@@ -206,13 +206,13 @@ def generar_recibo_pdf(
     c.setLineWidth(0.5)
     c.line(margin_x, y_pie + 20, width - margin_x, y_pie + 20)
 
-    c.setFont(FUENTE_NORMAL, TAMANO_GRANDE)
-    c.setFillColor(color_oscuro)
+    c.setFont(FUENTE_NEGRITA, TAMANO_PIE)
+    c.setFillColor(color_verde_oscuro)
     c.drawString(margin_x, y_pie, vendedor)
 
     fecha_impresion = datetime.now(timezone(timedelta(hours=-6))).strftime("%d-%m-%Y %H:%M:%S")
-    c.setFont(FUENTE_NORMAL, TAMANO_GRANDE)
-    c.setFillColor(color_gris)
+    c.setFont(FUENTE_NEGRITA, TAMANO_PIE)
+    c.setFillColor(color_verde_oscuro)
     c.drawRightString(width - margin_x, y_pie, fecha_impresion)
 
     c.save()
