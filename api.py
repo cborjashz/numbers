@@ -129,7 +129,7 @@ def generar_recibo_pdf(
     y = y_table - 35
     precios_ordenados = sorted(agrupado.keys(), reverse=True)
     total_numeros_jugados = 0
-    MAX_NUMEROS_POR_FILA = 10
+    MAX_NUMEROS_POR_FILA = 8
 
     for precio in precios_ordenados:
         numeros = agrupado[precio]
