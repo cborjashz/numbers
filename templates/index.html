@@ -980,8 +980,27 @@
             document.getElementById('reporteCierreModal').style.display = 'flex';
             const hoy = obtenerFechaNicaragua();
             document.getElementById('reporteCierreFecha').value = hoy;
-            document.getElementById('reporteCierreSelect').value = '';
             document.getElementById('reporteCierreResultado').innerHTML = '';
+
+            // Verificar si el usuario tiene cierre domingo
+            const esDomingo = localStorage.getItem('loteria_domingo') === 'true';
+            const selectCierre = document.getElementById('reporteCierreSelect');
+
+            if (esDomingo) {
+                // Solo mostrar la opción del cierre domingo
+                const fechaDomingo = obtenerFechaDomingo();
+                selectCierre.innerHTML = `<option value="Cierre Domingo ${fechaDomingo}">Cierre Domingo ${fechaDomingo}</option>`;
+                selectCierre.value = `Cierre Domingo ${fechaDomingo}`;
+            } else {
+                // Restaurar las opciones normales
+                selectCierre.innerHTML = `
+                    <option value="">Seleccione un cierre</option>
+                    <option value="Cierre 1 (11am)">Cierre 1 (11am)</option>
+                    <option value="Cierre 2 (3pm)">Cierre 2 (3pm)</option>
+                    <option value="Cierre 3 (9pm)">Cierre 3 (9pm)</option>
+                `;
+                selectCierre.value = '';
+            }
         }
 
         function cerrarReporteCierre() {

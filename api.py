@@ -430,19 +430,31 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
-        # 1. Determinar el cierre
+        # 1. Obtener el campo "domingo" del usuario
+        cursor.execute("SELECT domingo FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado_domingo = cursor.fetchone()
+        es_domingo = resultado_domingo[0] if resultado_domingo else False
+
+        # 2. Determinar el cierre
         if venta.cierre_elegido:
-            cierres_validos = ["Cierre 1 (11am)", "Cierre 2 (3pm)", "Cierre 3 (9pm)"]
-            if venta.cierre_elegido not in cierres_validos:
-                raise HTTPException(status_code=400, detail="Cierre elegido no válido")
-            hora_actual = ahora.hour
-            if venta.cierre_elegido == "Cierre 1 (11am)" and hora_actual >= 11:
-                raise HTTPException(status_code=400, detail="El Cierre 1 (11am) ya pasó.")
-            elif venta.cierre_elegido == "Cierre 2 (3pm)" and hora_actual >= 15:
-                raise HTTPException(status_code=400, detail="El Cierre 2 (3pm) ya pasó.")
-            elif venta.cierre_elegido == "Cierre 3 (9pm)" and hora_actual >= 21:
-                raise HTTPException(status_code=400, detail="El Cierre 3 (9pm) ya pasó.")
-            cierre = venta.cierre_elegido
+            if es_domingo:
+                # Si el usuario tiene cierre domingo, solo se acepta un cierre que empiece con "Cierre Domingo"
+                if not venta.cierre_elegido.startswith("Cierre Domingo"):
+                    raise HTTPException(status_code=400, detail="Cierre elegido no válido. Solo se permite el cierre domingo.")
+                cierre = venta.cierre_elegido
+            else:
+                # Si el usuario no tiene cierre domingo, solo se aceptan los 3 cierres normales
+                cierres_validos = ["Cierre 1 (11am)", "Cierre 2 (3pm)", "Cierre 3 (9pm)"]
+                if venta.cierre_elegido not in cierres_validos:
+                    raise HTTPException(status_code=400, detail="Cierre elegido no válido")
+                hora_actual = ahora.hour
+                if venta.cierre_elegido == "Cierre 1 (11am)" and hora_actual >= 11:
+                    raise HTTPException(status_code=400, detail="El Cierre 1 (11am) ya pasó.")
+                elif venta.cierre_elegido == "Cierre 2 (3pm)" and hora_actual >= 15:
+                    raise HTTPException(status_code=400, detail="El Cierre 2 (3pm) ya pasó.")
+                elif venta.cierre_elegido == "Cierre 3 (9pm)" and hora_actual >= 21:
+                    raise HTTPException(status_code=400, detail="El Cierre 3 (9pm) ya pasó.")
+                cierre = venta.cierre_elegido
         else:
             cierre = calcular_cierre(ahora.hour)
 
