@@ -214,6 +214,31 @@
             const dia = String(nicaragua.getUTCDate()).padStart(2, '0');
             return `${año}-${mes}-${dia}`;
         }
+
+        // Función auxiliar para obtener la fecha del próximo domingo (o el domingo actual si hoy es domingo)
+        function obtenerFechaDomingo() {
+            const ahora = new Date();
+            const nicaragua = new Date(ahora.getTime() - (6 * 60 * 60 * 1000));
+            const diaSemana = nicaragua.getUTCDay(); // 0 = domingo, 1 = lunes, ..., 6 = sábado
+            
+            // Calcular cuántos días faltan para el próximo domingo
+            let diasParaDomingo = 0;
+            if (diaSemana !== 0) {
+                diasParaDomingo = 7 - diaSemana;
+            }
+            
+            // Sumar los días al domingo actual
+            const domingo = new Date(nicaragua.getTime() + (diasParaDomingo * 24 * 60 * 60 * 1000));
+            const año = domingo.getUTCFullYear();
+            const mes = domingo.getUTCMonth();
+            const dia = domingo.getUTCDate();
+            
+            const meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+                          "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+            
+            return `${dia} ${meses[mes]} ${año}`;
+        }
+        
         // Login
         async function login() {
             const user = document.getElementById('loginUser').value;
@@ -230,6 +255,7 @@
                 currentToken = data.token;
                 localStorage.setItem('loteria_token', data.token);
                 localStorage.setItem('loteria_usuario', data.usuario);
+                localStorage.setItem('loteria_domingo', data.domingo ? 'true' : 'false');
 
                 document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
                 document.getElementById('loginBox').classList.remove('active');
@@ -239,10 +265,33 @@
                 // Establecer fecha actual por defecto en el selector
                 const hoy = new Date();
                 const fechaLocal = hoy.toISOString().split('T')[0];
-                document.getElementById('fechaSelect').value = fechaLocal;  
+                document.getElementById('fechaSelect').value = fechaLocal;
+
+                // Ajustar el selectbox de cierre según el campo "domingo"
+                ajustarSelectorCierre(data.domingo);
 
             } else {
                 document.getElementById('loginMsg').innerText = '❌ ' + data.detail;
+            }
+        }
+
+        // Función para ajustar el selectbox de cierre según el campo "domingo" del usuario
+        function ajustarSelectorCierre(esDomingo) {
+            const select = document.getElementById('cierreSelect');
+            
+            if (esDomingo) {
+                // Reemplazar todas las opciones con una sola
+                select.innerHTML = `<option value="Cierre Domingo ${obtenerFechaDomingo()}">Cierre Domingo ${obtenerFechaDomingo()}</option>`;
+                select.value = `Cierre Domingo ${obtenerFechaDomingo()}`;
+            } else {
+                // Restaurar las opciones normales
+                select.innerHTML = `
+                    <option value="">Automático (según hora)</option>
+                    <option value="Cierre 1 (11am)">Cierre 1 (11am)</option>
+                    <option value="Cierre 2 (3pm)">Cierre 2 (3pm)</option>
+                    <option value="Cierre 3 (9pm)">Cierre 3 (9pm)</option>
+                `;
+                select.value = '';
             }
         }
 
@@ -267,6 +316,7 @@
             // Limpiar localStorage y variables
             localStorage.removeItem('loteria_token');
             localStorage.removeItem('loteria_usuario');
+            localStorage.removeItem('loteria_domingo');
             currentUser = null;
             currentToken = null;
             selectedNumbers = [];
@@ -902,6 +952,7 @@
         window.onload = function() {
             const savedToken = localStorage.getItem('loteria_token');
             const savedUser = localStorage.getItem('loteria_usuario');
+            const savedDomingo = localStorage.getItem('loteria_domingo');
             if (savedToken && savedUser) {
                 currentToken = savedToken;
                 currentUser = savedUser;
@@ -910,6 +961,9 @@
                 document.getElementById('gameBox').classList.add('active');
                 cargarOpciones();
                 generarTablero();
+                
+                // Restaurar el selectbox según el campo "domingo"
+                ajustarSelectorCierre(savedDomingo === 'true');
             }
         };
 
@@ -1102,6 +1156,27 @@
             lineas.forEach(linea => {
                 let limpia = linea.trim();
                 if (!limpia) return;
+
+                // --- FORMATO 5: NÚMEROS CON "CON LPS" (números separados + con Lps + precio) ---
+                // Ejemplo: "83 79 con Lps 100" → 83 y 79 a 100
+                // Ejemplo: "66 67 85 58 12 21 13 31 27 72 con Lps 25" → 10 números a 25
+                const conLpsRegex = /^([\d\s,\.]+)\s+con\s+Lps\s+(\d+)$/i;
+                let conLpsMatch = limpia.match(conLpsRegex);
+                if (conLpsMatch) {
+                    const numerosStr = conLpsMatch[1].trim();
+                    const precio = parseInt(conLpsMatch[2], 10);
+                    if (precio > 0) {
+                        // Separar los números por coma, punto o espacio
+                        const numeros = numerosStr.split(/[\s,\.]+/).filter(n => n !== '');
+                        numeros.forEach(num => {
+                            const val = parseInt(num, 10);
+                            if (!isNaN(val) && val >= 0 && val <= 99) {
+                                items.push({ numero: num.padStart(2, '0'), precio: precio });
+                            }
+                        });
+                        return; // Ya procesamos esta línea
+                    }
+                }
 
                 // --- FORMATO 1: REVES Y DERECHO (grupos de 4 dígitos + precio) ---
                 // Ejemplo: "2772 7557 con 50 lps" → 27,72,75,57 a 50

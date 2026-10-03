@@ -311,9 +311,9 @@ async def login(data: LoginRequest):
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Validar credenciales y obtener datos del usuario (INCLUIMOS id_mayorista)
+        # 1. Validar credenciales y obtener datos del usuario (INCLUIMOS id_mayorista y domingo)
         cursor.execute("""
-            SELECT id_usuario, nombre_usuario, limite_venta, fecha_expiracion, max_sesiones, activo, id_mayorista
+            SELECT id_usuario, nombre_usuario, limite_venta, fecha_expiracion, max_sesiones, activo, id_mayorista, domingo
             FROM usuarios 
             WHERE nombre_usuario = %s AND password_hash = %s
         """, (data.usuario, data.password))
@@ -328,6 +328,7 @@ async def login(data: LoginRequest):
         max_sesiones = resultado[4]
         activo = resultado[5]
         id_mayorista = resultado[6]
+        domingo = resultado[7]
 
         # 2. Verificar que el usuario esté activo
         if not activo:
@@ -365,13 +366,14 @@ async def login(data: LoginRequest):
         conn.commit()
         conn.close()
 
-        # 8. Devolver token, datos y AHORA TAMBIÉN id_mayorista
+        # 8. Devolver token, datos, id_mayorista y domingo
         return {
             "usuario": nombre_usuario,
             "limite_venta": limite_venta,
             "token": token,
             "expiracion": expiracion_token.isoformat(),
-            "id_mayorista": id_mayorista  # <--- NUEVO CAMPO DEVUELTO
+            "id_mayorista": id_mayorista,
+            "domingo": domingo
         }
 
     except Exception as e:
