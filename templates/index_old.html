@@ -205,6 +205,15 @@
         // URL de la API
         const API = '/api';
 
+        // Función auxiliar para obtener la fecha en zona horaria de Nicaragua (UTC-6)
+        function obtenerFechaNicaragua() {
+            const ahora = new Date();
+            const nicaragua = new Date(ahora.getTime() - (6 * 60 * 60 * 1000));
+            const año = nicaragua.getUTCFullYear();
+            const mes = String(nicaragua.getUTCMonth() + 1).padStart(2, '0');
+            const dia = String(nicaragua.getUTCDate()).padStart(2, '0');
+            return `${año}-${mes}-${dia}`;
+        }
         // Login
         async function login() {
             const user = document.getElementById('loginUser').value;
@@ -752,8 +761,7 @@
 
         function abrirReporte() {
             document.getElementById('reporteModal').style.display = 'flex';
-            // Establecer fechas por defecto (hoy)
-            const hoy = new Date().toISOString().split('T')[0];
+            const hoy = obtenerFechaNicaragua();
             document.getElementById('reporteFechaInicio').value = hoy;
             document.getElementById('reporteFechaFin').value = hoy;
             cargarReporte();
@@ -907,7 +915,7 @@
 
         function abrirReporteCierre() {
             document.getElementById('reporteCierreModal').style.display = 'flex';
-            const hoy = new Date().toISOString().split('T')[0];
+            const hoy = obtenerFechaNicaragua();
             document.getElementById('reporteCierreFecha').value = hoy;
             document.getElementById('reporteCierreSelect').value = '';
             document.getElementById('reporteCierreResultado').innerHTML = '';
