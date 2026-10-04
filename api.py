@@ -413,12 +413,11 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
     conn = None
     try:
         # === VALIDACIÓN DE PRECIO NEGATIVO ===
-        # === VALIDACIÓN DE PRECIO NEGATIVO Y CLIENTE ===
         for item in venta.items:
             if item["precio"] <= 0:
                 raise HTTPException(status_code=400, detail="Todos los precios deben ser mayores a 0")
-        
-        # Si el cliente llega vacío, lo forzamos a "Cliente Final"
+
+        # === VALIDACIÓN DE CLIENTE ===
         if not venta.cliente or venta.cliente.strip() == "":
             venta.cliente = "Cliente Final"
 
@@ -430,20 +429,36 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
-        # 1. Obtener el campo "domingo" del usuario
+        # ============================================================
+        # CAPA 1: Obtener el campo "domingo" del usuario DESDE LA BD
+        # (nunca confiar en el frontend para esta decisión)
+        # ============================================================
         cursor.execute("SELECT domingo FROM usuarios WHERE id_usuario = %s", (id_usuario,))
         resultado_domingo = cursor.fetchone()
-        es_domingo = resultado_domingo[0] if resultado_domingo else False
+        if not resultado_domingo:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        es_domingo = resultado_domingo[0]
 
-        # 2. Determinar el cierre
-        if venta.cierre_elegido:
-            if es_domingo:
-                # Si el usuario tiene cierre domingo, solo se acepta un cierre que empiece con "Cierre Domingo"
-                if not venta.cierre_elegido.startswith("Cierre Domingo"):
-                    raise HTTPException(status_code=400, detail="Cierre elegido no válido. Solo se permite el cierre domingo.")
-                cierre = venta.cierre_elegido
-            else:
-                # Si el usuario no tiene cierre domingo, solo se aceptan los 3 cierres normales
+        # ============================================================
+        # CAPA 2: Calcular el cierre en el BACKEND (no confiar en el frontend)
+        # ============================================================
+        cierre = None
+
+        if es_domingo:
+            # Si el usuario tiene domingo = true, calcular el cierre en el backend
+            # con la fecha del próximo domingo, ignorando el cierre_elegido del frontend
+            dia_semana = ahora.weekday()  # 0 = lunes, ..., 6 = domingo
+            dias_para_domingo = (6 - dia_semana) % 7
+            if dias_para_domingo == 0 and ahora.hour >= 12:
+                # Si hoy es domingo después del mediodía, el cierre es el domingo de la próxima semana
+                dias_para_domingo = 7
+            domingo = ahora + timedelta(days=dias_para_domingo)
+            meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+                     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+            cierre = f"Cierre Domingo {domingo.day} {meses[domingo.month - 1]} {domingo.year}"
+        else:
+            # Si no es domingo, usar el cierre elegido del frontend (con validación)
+            if venta.cierre_elegido:
                 cierres_validos = ["Cierre 1 (11am)", "Cierre 2 (3pm)", "Cierre 3 (9pm)"]
                 if venta.cierre_elegido not in cierres_validos:
                     raise HTTPException(status_code=400, detail="Cierre elegido no válido")
@@ -455,8 +470,31 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
                 elif venta.cierre_elegido == "Cierre 3 (9pm)" and hora_actual >= 21:
                     raise HTTPException(status_code=400, detail="El Cierre 3 (9pm) ya pasó.")
                 cierre = venta.cierre_elegido
-        else:
+            else:
+                # CAPA 4: Fallback seguro. Calcular el cierre automático si no viene nada.
+                cierre = calcular_cierre(ahora.hour)
+
+        # ============================================================
+        # CAPA 3: Revalidación FINAL justo antes del INSERT
+        # (garantizar que el cierre no haya cambiado entre operaciones)
+        # ============================================================
+        if es_domingo:
+            # Recalcular el cierre domingo (por si acaso)
+            dia_semana = ahora.weekday()
+            dias_para_domingo = (6 - dia_semana) % 7
+            if dias_para_domingo == 0 and ahora.hour >= 12:
+                dias_para_domingo = 7
+            domingo = ahora + timedelta(days=dias_para_domingo)
+            meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+                     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+            cierre = f"Cierre Domingo {domingo.day} {meses[domingo.month - 1]} {domingo.year}"
+        elif not cierre or cierre == "":
             cierre = calcular_cierre(ahora.hour)
+
+        # ============================================================
+        # CAPA 5: Log de auditoría
+        # ============================================================
+        print(f"AUDITORÍA: Usuario {nombre_vendedor} (id={id_usuario}, domingo={es_domingo}) → cierre_asignado='{cierre}'")
 
         # 2. Agrupar los items por precio
         grupos = {}
@@ -502,14 +540,11 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         num_recibo = int(f"{(int(ahora.timestamp() * 1000) % 10000000)}{random.randint(100, 999)}")
 
         # 7. Preparar datos para la BD
-        # - numero_jugado: lista plana de números (para cumplir NOT NULL)
-        # - precio_unitario: valor del primer precio (NO se usa, solo para NOT NULL)
-        # - detalle_venta: detalle agrupado por precio (fuente de verdad)
         numeros_planos = [item["numero"] for item in venta.items]
         numeros_json = json.dumps(numeros_planos)
         primer_precio = venta.items[0]["precio"] if venta.items else 0
 
-        # 8. Guardar en la BD
+        # 8. Guardar en la BD (con el cierre revalidado)
         sql_insert = """
             INSERT INTO ventas (
                 num_recibo, id_usuario, cliente, fecha_hora,
@@ -522,17 +557,17 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
             id_usuario,
             venta.cliente,
             ahora,
-            cierre,
+            cierre,              # <--- Cierre revalidado (blindado)
             id_mayorista,
             total,
-            numeros_json,        # <--- LISTA PLANA DE NÚMEROS
-            primer_precio,       # <--- PRIMER PRECIO (solo para NOT NULL)
-            detalle_json         # <--- DETALLE AGRUPADO (fuente de verdad)
+            numeros_json,
+            primer_precio,
+            detalle_json
         ))
 
         conn.commit()
 
-        # 8. Generar PDF usando el diccionario agrupado
+        # 9. Generar PDF usando el diccionario agrupado
         fecha_str = ahora.strftime("%d-%m-%Y %H:%M:%S")
         pdf_buffer = generar_recibo_pdf(
             num_recibo=num_recibo,
@@ -729,6 +764,7 @@ async def logout(authorization: str = Header(None)):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/tablero-estado")
 async def tablero_estado(
     authorization: str = Header(None),
@@ -747,16 +783,7 @@ async def tablero_estado(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-#        # 1. Obtener el id_mayorista del usuario
- #       cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
- #       resultado = cursor.fetchone()
-  #      if not resultado or resultado[0] is None:
-   #         conn.close()
-    #        return {"numeros": {}, "total": 0.0}
-
-     #   id_mayorista = resultado[0]
-
-        # 2. Determinar fecha y cierre
+        # 1. Determinar fecha y cierre
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
@@ -770,7 +797,7 @@ async def tablero_estado(
         else:
             cierre_consulta = calcular_cierre(ahora.hour)
 
-        # 3. Consulta SQL: Si el cierre empieza con "Cierre Domingo", ignorar el filtro de fecha
+        # 2. Consulta SQL: Si el cierre empieza con "Cierre Domingo", ignorar el filtro de fecha
         if cierre_consulta.startswith("Cierre Domingo"):
             cursor.execute("""
                 SELECT 
@@ -780,7 +807,6 @@ async def tablero_estado(
                 LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
                 LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
                 WHERE v.cierre_asignado = %s
-                  AND v.id_mayorista = %s
                   AND v.id_usuario = %s
                 GROUP BY num_individual
             """, (cierre_consulta, id_usuario))
@@ -793,7 +819,6 @@ async def tablero_estado(
                 LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
                 LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
                 WHERE v.cierre_asignado = %s
-                  AND v.id_mayorista = %s
                   AND v.id_usuario = %s
                   AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
                 GROUP BY num_individual
