@@ -840,16 +840,7 @@ async def reporte_ventas_cliente(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Obtener id_mayorista del usuario
-        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
-        resultado = cursor.fetchone()
-        if not resultado or resultado[0] is None:
-            conn.close()
-            return []
-
-        id_mayorista = resultado[0]
-
-        # 2. Determinar rango de fechas
+        # 1. Determinar rango de fechas
         managua_tz = timezone(timedelta(hours=-6))
         hoy = datetime.now(managua_tz).date()
 
@@ -863,7 +854,7 @@ async def reporte_ventas_cliente(
         else:
             fecha_fin_dt = hoy
 
-        # 3. Construir la consulta SQL base
+        # 2. Construir la consulta SQL base
         sql = """
             SELECT 
                 v.num_recibo,
@@ -872,18 +863,17 @@ async def reporte_ventas_cliente(
                 SUM(v.cantidad) AS total_numeros,
                 SUM(v.total) AS total_monto
             FROM ventas v
-            WHERE v.id_mayorista = %s
-              AND v.id_usuario = %s
+            WHERE v.id_usuario = %s
               AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
         """
-        params = [id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt]
+        params = [id_usuario, fecha_inicio_dt, fecha_fin_dt]
 
-        # 4. Filtro por cliente (ILIKE)
+        # 3. Filtro por cliente (ILIKE)
         if cliente_filtro and cliente_filtro.strip() != "":
             sql += " AND v.cliente ILIKE %s"
             params.append(f"%{cliente_filtro.strip()}%")
 
-        # 5. Filtro por número (búsqueda dentro del JSONB detalle_venta)
+        # 4. Filtro por número (búsqueda dentro del JSONB detalle_venta)
         if numero_filtro and numero_filtro.strip() != "":
             sql += """
                 AND EXISTS (
@@ -895,7 +885,7 @@ async def reporte_ventas_cliente(
             """
             params.append(numero_filtro.strip())
 
-        # 6. Completar la consulta
+        # 5. Completar la consulta
         sql += """
             GROUP BY v.num_recibo, v.cliente, v.cierre_asignado
             ORDER BY v.cliente, v.cierre_asignado
@@ -905,7 +895,7 @@ async def reporte_ventas_cliente(
         filas = cursor.fetchall()
         conn.close()
 
-        # 7. Formatear respuesta
+        # 6. Formatear respuesta
         resultado = []
         for num_recibo, cliente, cierre, total_numeros, total_monto in filas:
             resultado.append({
@@ -943,16 +933,7 @@ async def reporte_ventas_cliente_pdf(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Obtener id_mayorista del usuario
-        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
-        resultado = cursor.fetchone()
-        if not resultado or resultado[0] is None:
-            conn.close()
-            raise HTTPException(status_code=404, detail="Usuario sin mayorista")
-
-        id_mayorista = resultado[0]
-
-        # 2. Determinar rango de fechas
+        # 1. Determinar rango de fechas
         managua_tz = timezone(timedelta(hours=-6))
         hoy = datetime.now(managua_tz).date()
 
@@ -966,7 +947,7 @@ async def reporte_ventas_cliente_pdf(
         else:
             fecha_fin_dt = hoy
 
-        # 3. Consulta SQL: Agrupar por cliente y cierre
+        # 2. Consulta SQL: Agrupar por cliente y cierre
         cursor.execute("""
             SELECT 
                 cliente,
@@ -974,17 +955,16 @@ async def reporte_ventas_cliente_pdf(
                 SUM(cantidad) AS total_numeros,
                 SUM(total) AS total_monto
             FROM ventas
-            WHERE id_mayorista = %s
-              AND id_usuario = %s
+            WHERE id_usuario = %s
               AND DATE(fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
             GROUP BY cliente, cierre_asignado
             ORDER BY cliente, cierre_asignado
-        """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
+        """, (id_usuario, fecha_inicio_dt, fecha_fin_dt))
 
         filas = cursor.fetchall()
         conn.close()
 
-        # 4. Generar PDF
+        # 3. Generar PDF
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=letter)
         width, height = letter
@@ -1013,12 +993,12 @@ async def reporte_ventas_cliente_pdf(
         total_general = 0
 
         for cliente, cierre, total_numeros, total_monto in filas:
-            if y < 50:  # Salto de página si no hay espacio
+            if y < 50:
                 c.showPage()
                 y = height - 50
                 c.setFont("Helvetica", 11)
 
-            c.drawString(50, y, cliente[:30])  # Truncar si es muy largo
+            c.drawString(50, y, cliente[:30])
             c.drawString(200, y, cierre)
             c.drawString(350, y, str(total_numeros))
             c.drawString(450, y, f"{total_monto:.2f}")
