@@ -747,7 +747,7 @@ async def tablero_estado(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Obtener el id_mayorista del usuario logueado
+        # 1. Obtener el id_mayorista del usuario
         cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
         resultado = cursor.fetchone()
         if not resultado or resultado[0] is None:
@@ -756,7 +756,7 @@ async def tablero_estado(
 
         id_mayorista = resultado[0]
 
-        # 2. Determinar fecha y cierre (usando zona Managua)
+        # 2. Determinar fecha y cierre
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
@@ -770,20 +770,34 @@ async def tablero_estado(
         else:
             cierre_consulta = calcular_cierre(ahora.hour)
 
-        # 3. Consulta SQL usando los filtros dinámicos
-        cursor.execute("""
-            SELECT 
-                num_individual AS numero,
-                SUM((detalle->>'precio')::numeric) AS monto_total
-            FROM ventas v,
-            LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
-            LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
-            WHERE v.cierre_asignado = %s
-              AND v.id_mayorista = %s
-              AND v.id_usuario = %s
-              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
-            GROUP BY num_individual
-        """, (cierre_consulta, id_mayorista, id_usuario, fecha_consulta))
+        # 3. Consulta SQL: Si el cierre empieza con "Cierre Domingo", ignorar el filtro de fecha
+        if cierre_consulta.startswith("Cierre Domingo"):
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_mayorista = %s
+                  AND v.id_usuario = %s
+                GROUP BY num_individual
+            """, (cierre_consulta, id_mayorista, id_usuario))
+        else:
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_mayorista = %s
+                  AND v.id_usuario = %s
+                  AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
+                GROUP BY num_individual
+            """, (cierre_consulta, id_mayorista, id_usuario, fecha_consulta))
 
         filas = cursor.fetchall()
         conn.close()
@@ -1052,7 +1066,7 @@ async def reporte_cierre(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Obtener id_mayorista del usuario (aunque no se use para filtrar, lo mantenemos por consistencia)
+        # 1. Obtener id_mayorista del usuario
         cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
         resultado = cursor.fetchone()
         if not resultado or resultado[0] is None:
@@ -1071,20 +1085,34 @@ async def reporte_cierre(
         if not cierre:
             raise HTTPException(status_code=400, detail="Debe seleccionar un cierre válido")
 
-        # 3. Consulta SQL: Agrupar por número individual, sumando el precio_unitario
-        cursor.execute("""
-            SELECT 
-                num_individual AS numero,
-                SUM((detalle->>'precio')::numeric) AS monto_total
-            FROM ventas v,
-            LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
-            LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
-            WHERE v.cierre_asignado = %s
-              AND v.id_usuario = %s
-              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
-            GROUP BY num_individual
-            ORDER BY num_individual ASC
-        """, (cierre, id_usuario, fecha_consulta))
+        # 3. Consulta SQL: Si el cierre empieza con "Cierre Domingo", ignorar el filtro de fecha
+        if cierre.startswith("Cierre Domingo"):
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_usuario = %s
+                GROUP BY num_individual
+                ORDER BY num_individual ASC
+            """, (cierre, id_usuario))
+        else:
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_usuario = %s
+                  AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
+                GROUP BY num_individual
+                ORDER BY num_individual ASC
+            """, (cierre, id_usuario, fecha_consulta))
 
         filas = cursor.fetchall()
         conn.close()
@@ -1102,7 +1130,7 @@ async def reporte_cierre(
             if num_str not in numeros:
                 numeros[num_str] = 0.0
 
-        # 6. Ordenar los números de forma natural (00, 01, 02, ...)
+        # 6. Ordenar los números
         numeros_ordenados = {k: numeros[k] for k in sorted(numeros.keys())}
 
         return {
@@ -1158,20 +1186,34 @@ async def reporte_cierre_pdf(
             conn.close()
             raise HTTPException(status_code=400, detail="Debe seleccionar un cierre válido")
 
-        # 3. Consulta SQL para obtener los datos del cierre
-        cursor.execute("""
-            SELECT 
-                num_individual AS numero,
-                SUM((detalle->>'precio')::numeric) AS monto_total
-            FROM ventas v,
-            LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
-            LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
-            WHERE v.cierre_asignado = %s
-              AND v.id_usuario = %s
-              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
-            GROUP BY num_individual
-            ORDER BY num_individual ASC
-        """, (cierre, id_usuario, fecha_consulta))
+        # 3. Consulta SQL: Si el cierre empieza con "Cierre Domingo", ignorar el filtro de fecha
+        if cierre.startswith("Cierre Domingo"):
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_usuario = %s
+                GROUP BY num_individual
+                ORDER BY num_individual ASC
+            """, (cierre, id_usuario))
+        else:
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_usuario = %s
+                  AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
+                GROUP BY num_individual
+                ORDER BY num_individual ASC
+            """, (cierre, id_usuario, fecha_consulta))
 
         filas = cursor.fetchall()
         conn.close()
@@ -1188,12 +1230,10 @@ async def reporte_cierre_pdf(
         c = canvas.Canvas(buffer, pagesize=letter)
         width, height = letter
 
-        # Colores
         color_oro = (0.85, 0.65, 0.13)
         color_oscuro = (0.15, 0.15, 0.15)
         color_gris = (0.4, 0.4, 0.4)
 
-        # === ENCABEZADO ===
         c.setStrokeColor(color_oro)
         c.setLineWidth(2)
         c.line(50, height - 50, width - 50, height - 50)
@@ -1206,16 +1246,13 @@ async def reporte_cierre_pdf(
         c.setFillColor(color_gris)
         c.drawCentredString(width / 2, height - 100, f"Generado el {datetime.now(managua_tz).strftime('%d-%m-%Y %H:%M:%S')}")
 
-        # === DATOS GENERALES ===
         y = height - 140
-        line_height = 20
         c.setFont("Helvetica-Bold", 11)
         c.setFillColor(color_oscuro)
         c.drawString(50, y, f"Vendedor: {nombre_vendedor}")
         c.drawString(250, y, f"Cierre: {cierre}")
         c.drawString(450, y, f"Fecha: {fecha_consulta.strftime('%d-%m-%Y')}")
 
-        # === DETALLE POR NÚMERO ===
         y -= 40
         c.setFont("Helvetica-Bold", 10)
         c.setFillColor(color_oscuro)
@@ -1229,7 +1266,7 @@ async def reporte_cierre_pdf(
         y -= 20
         c.setFont("Helvetica", 10)
         for num, monto in sorted(numeros.items()):
-            if y < 50:  # Salto de página
+            if y < 50:
                 c.showPage()
                 y = height - 50
                 c.setFont("Helvetica", 10)
@@ -1239,7 +1276,6 @@ async def reporte_cierre_pdf(
                 c.drawRightString(width - 50, y, f"L. {monto:.2f}")
             y -= 15
 
-        # === TOTAL GENERAL ===
         y -= 15
         c.setStrokeColor(color_oro)
         c.setLineWidth(1)
