@@ -747,14 +747,14 @@ async def tablero_estado(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Obtener el id_mayorista del usuario
-        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
-        resultado = cursor.fetchone()
-        if not resultado or resultado[0] is None:
-            conn.close()
-            return {"numeros": {}, "total": 0.0}
+#        # 1. Obtener el id_mayorista del usuario
+ #       cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+ #       resultado = cursor.fetchone()
+  #      if not resultado or resultado[0] is None:
+   #         conn.close()
+    #        return {"numeros": {}, "total": 0.0}
 
-        id_mayorista = resultado[0]
+     #   id_mayorista = resultado[0]
 
         # 2. Determinar fecha y cierre
         managua_tz = timezone(timedelta(hours=-6))
@@ -783,7 +783,7 @@ async def tablero_estado(
                   AND v.id_mayorista = %s
                   AND v.id_usuario = %s
                 GROUP BY num_individual
-            """, (cierre_consulta, id_mayorista, id_usuario))
+            """, (cierre_consulta, id_usuario))
         else:
             cursor.execute("""
                 SELECT 
@@ -797,7 +797,7 @@ async def tablero_estado(
                   AND v.id_usuario = %s
                   AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
                 GROUP BY num_individual
-            """, (cierre_consulta, id_mayorista, id_usuario, fecha_consulta))
+            """, (cierre_consulta, id_usuario, fecha_consulta))
 
         filas = cursor.fetchall()
         conn.close()
@@ -1066,12 +1066,12 @@ async def reporte_cierre(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Obtener id_mayorista del usuario
-        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
-        resultado = cursor.fetchone()
-        if not resultado or resultado[0] is None:
-            conn.close()
-            return {"vendedor": nombre_vendedor, "cierre": cierre, "numeros": {}, "total": 0.0}
+#        # 1. Obtener id_mayorista del usuario
+#        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+#        resultado = cursor.fetchone()
+#        if not resultado or resultado[0] is None:
+#            conn.close()
+#            return {"vendedor": nombre_vendedor, "cierre": cierre, "numeros": {}, "total": 0.0}
 
         # 2. Determinar fecha y cierre
         managua_tz = timezone(timedelta(hours=-6))
