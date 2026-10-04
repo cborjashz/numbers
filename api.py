@@ -1166,12 +1166,12 @@ async def reporte_cierre_pdf(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Validar mayorista y obtener datos
-        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        # 1. Validar que el usuario existe
+        cursor.execute("SELECT id_usuario FROM usuarios WHERE id_usuario = %s", (id_usuario,))
         resultado = cursor.fetchone()
-        if not resultado or resultado[0] is None:
+        if not resultado:
             conn.close()
-            raise HTTPException(status_code=404, detail="Usuario sin mayorista")
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
         # 2. Determinar fecha y cierre
         managua_tz = timezone(timedelta(hours=-6))
