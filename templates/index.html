@@ -1185,6 +1185,23 @@
                 let limpia = linea.trim();
                 if (!limpia) return;
 
+                // --- FORMATO 6: NÚMERO + "d" + PRECIO (acepta "d" o "dd") ---
+                // Ejemplo: "51d50" → 51 a 50
+                // Ejemplo: "02dd40" → 02 a 40 (tolera el doble "d" por error de tipeo)
+                // Ejemplo: "51 d 50" → 51 a 50 (acepta espacios alrededor de la "d")
+                const formatoDRegex = /^(\d{2})\s*d+\s*(\d+)$/i;
+                let dMatch = limpia.match(formatoDRegex);
+                if (dMatch) {
+                    const numero = dMatch[1].padStart(2, '0');
+                    const precio = parseInt(dMatch[2], 10);
+                    if (precio > 0 && parseInt(numero, 10) >= 0 && parseInt(numero, 10) <= 99) {
+                        items.push({ numero: numero, precio: precio });
+                        return; // Ya procesamos esta línea
+                    }
+                }
+
+                // --- FORMATO 5: NÚMEROS CON "CON LPS" (números separados + con Lps + precio) ---
+
                 // --- FORMATO 5: NÚMEROS CON "CON LPS" (números separados + con Lps + precio) ---
                 // Ejemplo: "83 79 con Lps 100" → 83 y 79 a 100
                 // Ejemplo: "66 67 85 58 12 21 13 31 27 72 con Lps 25" → 10 números a 25

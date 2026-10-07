@@ -413,12 +413,11 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
     conn = None
     try:
         # === VALIDACIÓN DE PRECIO NEGATIVO ===
-        # === VALIDACIÓN DE PRECIO NEGATIVO Y CLIENTE ===
         for item in venta.items:
             if item["precio"] <= 0:
                 raise HTTPException(status_code=400, detail="Todos los precios deben ser mayores a 0")
-        
-        # Si el cliente llega vacío, lo forzamos a "Cliente Final"
+
+        # === VALIDACIÓN DE CLIENTE ===
         if not venta.cliente or venta.cliente.strip() == "":
             venta.cliente = "Cliente Final"
 
@@ -430,21 +429,72 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
-        # 1. Determinar el cierre
-        if venta.cierre_elegido:
-            cierres_validos = ["Cierre 1 (11am)", "Cierre 2 (3pm)", "Cierre 3 (9pm)"]
-            if venta.cierre_elegido not in cierres_validos:
-                raise HTTPException(status_code=400, detail="Cierre elegido no válido")
-            hora_actual = ahora.hour
-            if venta.cierre_elegido == "Cierre 1 (11am)" and hora_actual >= 11:
-                raise HTTPException(status_code=400, detail="El Cierre 1 (11am) ya pasó.")
-            elif venta.cierre_elegido == "Cierre 2 (3pm)" and hora_actual >= 15:
-                raise HTTPException(status_code=400, detail="El Cierre 2 (3pm) ya pasó.")
-            elif venta.cierre_elegido == "Cierre 3 (9pm)" and hora_actual >= 21:
-                raise HTTPException(status_code=400, detail="El Cierre 3 (9pm) ya pasó.")
-            cierre = venta.cierre_elegido
+        # ============================================================
+        # CAPA 1: Obtener el campo "domingo" del usuario DESDE LA BD
+        # (nunca confiar en el frontend para esta decisión)
+        # ============================================================
+        cursor.execute("SELECT domingo FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado_domingo = cursor.fetchone()
+        if not resultado_domingo:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        es_domingo = resultado_domingo[0]
+
+        # ============================================================
+        # CAPA 2: Calcular el cierre en el BACKEND (no confiar en el frontend)
+        # ============================================================
+        cierre = None
+
+        if es_domingo:
+            # Si el usuario tiene domingo = true, calcular el cierre en el backend
+            # con la fecha del próximo domingo, ignorando el cierre_elegido del frontend
+            dia_semana = ahora.weekday()  # 0 = lunes, ..., 6 = domingo
+            dias_para_domingo = (6 - dia_semana) % 7
+            if dias_para_domingo == 0 and ahora.hour >= 12:
+                # Si hoy es domingo después del mediodía, el cierre es el domingo de la próxima semana
+                dias_para_domingo = 7
+            domingo = ahora + timedelta(days=dias_para_domingo)
+            meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+                     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+            cierre = f"Cierre Domingo {domingo.day} {meses[domingo.month - 1]} {domingo.year}"
         else:
+            # Si no es domingo, usar el cierre elegido del frontend (con validación)
+            if venta.cierre_elegido:
+                cierres_validos = ["Cierre 1 (11am)", "Cierre 2 (3pm)", "Cierre 3 (9pm)"]
+                if venta.cierre_elegido not in cierres_validos:
+                    raise HTTPException(status_code=400, detail="Cierre elegido no válido")
+                hora_actual = ahora.hour
+                if venta.cierre_elegido == "Cierre 1 (11am)" and hora_actual >= 11:
+                    raise HTTPException(status_code=400, detail="El Cierre 1 (11am) ya pasó.")
+                elif venta.cierre_elegido == "Cierre 2 (3pm)" and hora_actual >= 15:
+                    raise HTTPException(status_code=400, detail="El Cierre 2 (3pm) ya pasó.")
+                elif venta.cierre_elegido == "Cierre 3 (9pm)" and hora_actual >= 21:
+                    raise HTTPException(status_code=400, detail="El Cierre 3 (9pm) ya pasó.")
+                cierre = venta.cierre_elegido
+            else:
+                # CAPA 4: Fallback seguro. Calcular el cierre automático si no viene nada.
+                cierre = calcular_cierre(ahora.hour)
+
+        # ============================================================
+        # CAPA 3: Revalidación FINAL justo antes del INSERT
+        # (garantizar que el cierre no haya cambiado entre operaciones)
+        # ============================================================
+        if es_domingo:
+            # Recalcular el cierre domingo (por si acaso)
+            dia_semana = ahora.weekday()
+            dias_para_domingo = (6 - dia_semana) % 7
+            if dias_para_domingo == 0 and ahora.hour >= 12:
+                dias_para_domingo = 7
+            domingo = ahora + timedelta(days=dias_para_domingo)
+            meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+                     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+            cierre = f"Cierre Domingo {domingo.day} {meses[domingo.month - 1]} {domingo.year}"
+        elif not cierre or cierre == "":
             cierre = calcular_cierre(ahora.hour)
+
+        # ============================================================
+        # CAPA 5: Log de auditoría
+        # ============================================================
+        print(f"AUDITORÍA: Usuario {nombre_vendedor} (id={id_usuario}, domingo={es_domingo}) → cierre_asignado='{cierre}'")
 
         # 2. Agrupar los items por precio
         grupos = {}
@@ -490,14 +540,11 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
         num_recibo = int(f"{(int(ahora.timestamp() * 1000) % 10000000)}{random.randint(100, 999)}")
 
         # 7. Preparar datos para la BD
-        # - numero_jugado: lista plana de números (para cumplir NOT NULL)
-        # - precio_unitario: valor del primer precio (NO se usa, solo para NOT NULL)
-        # - detalle_venta: detalle agrupado por precio (fuente de verdad)
         numeros_planos = [item["numero"] for item in venta.items]
         numeros_json = json.dumps(numeros_planos)
         primer_precio = venta.items[0]["precio"] if venta.items else 0
 
-        # 8. Guardar en la BD
+        # 8. Guardar en la BD (con el cierre revalidado)
         sql_insert = """
             INSERT INTO ventas (
                 num_recibo, id_usuario, cliente, fecha_hora,
@@ -510,17 +557,17 @@ async def vender(venta: VentaRequest, authorization: str = Header(None)):
             id_usuario,
             venta.cliente,
             ahora,
-            cierre,
+            cierre,              # <--- Cierre revalidado (blindado)
             id_mayorista,
             total,
-            numeros_json,        # <--- LISTA PLANA DE NÚMEROS
-            primer_precio,       # <--- PRIMER PRECIO (solo para NOT NULL)
-            detalle_json         # <--- DETALLE AGRUPADO (fuente de verdad)
+            numeros_json,
+            primer_precio,
+            detalle_json
         ))
 
         conn.commit()
 
-        # 8. Generar PDF usando el diccionario agrupado
+        # 9. Generar PDF usando el diccionario agrupado
         fecha_str = ahora.strftime("%d-%m-%Y %H:%M:%S")
         pdf_buffer = generar_recibo_pdf(
             num_recibo=num_recibo,
@@ -717,6 +764,7 @@ async def logout(authorization: str = Header(None)):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/tablero-estado")
 async def tablero_estado(
     authorization: str = Header(None),
@@ -735,16 +783,7 @@ async def tablero_estado(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Obtener el id_mayorista del usuario logueado
-        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
-        resultado = cursor.fetchone()
-        if not resultado or resultado[0] is None:
-            conn.close()
-            return {"numeros": {}, "total": 0.0}
-
-        id_mayorista = resultado[0]
-
-        # 2. Determinar fecha y cierre (usando zona Managua)
+        # 1. Determinar fecha y cierre
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
 
@@ -758,20 +797,32 @@ async def tablero_estado(
         else:
             cierre_consulta = calcular_cierre(ahora.hour)
 
-        # 3. Consulta SQL usando los filtros dinámicos
-        cursor.execute("""
-            SELECT 
-                num_individual AS numero,
-                SUM((detalle->>'precio')::numeric) AS monto_total
-            FROM ventas v,
-            LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
-            LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
-            WHERE v.cierre_asignado = %s
-              AND v.id_mayorista = %s
-              AND v.id_usuario = %s
-              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
-            GROUP BY num_individual
-        """, (cierre_consulta, id_mayorista, id_usuario, fecha_consulta))
+        # 2. Consulta SQL: Si el cierre empieza con "Cierre Domingo", ignorar el filtro de fecha
+        if cierre_consulta.startswith("Cierre Domingo"):
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_usuario = %s
+                GROUP BY num_individual
+            """, (cierre_consulta, id_usuario))
+        else:
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_usuario = %s
+                  AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
+                GROUP BY num_individual
+            """, (cierre_consulta, id_usuario, fecha_consulta))
 
         filas = cursor.fetchall()
         conn.close()
@@ -814,16 +865,7 @@ async def reporte_ventas_cliente(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Obtener id_mayorista del usuario
-        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
-        resultado = cursor.fetchone()
-        if not resultado or resultado[0] is None:
-            conn.close()
-            return []
-
-        id_mayorista = resultado[0]
-
-        # 2. Determinar rango de fechas
+        # 1. Determinar rango de fechas
         managua_tz = timezone(timedelta(hours=-6))
         hoy = datetime.now(managua_tz).date()
 
@@ -837,7 +879,7 @@ async def reporte_ventas_cliente(
         else:
             fecha_fin_dt = hoy
 
-        # 3. Construir la consulta SQL base
+        # 2. Construir la consulta SQL base
         sql = """
             SELECT 
                 v.num_recibo,
@@ -846,18 +888,17 @@ async def reporte_ventas_cliente(
                 SUM(v.cantidad) AS total_numeros,
                 SUM(v.total) AS total_monto
             FROM ventas v
-            WHERE v.id_mayorista = %s
-              AND v.id_usuario = %s
+            WHERE v.id_usuario = %s
               AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
         """
-        params = [id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt]
+        params = [id_usuario, fecha_inicio_dt, fecha_fin_dt]
 
-        # 4. Filtro por cliente (ILIKE)
+        # 3. Filtro por cliente (ILIKE)
         if cliente_filtro and cliente_filtro.strip() != "":
             sql += " AND v.cliente ILIKE %s"
             params.append(f"%{cliente_filtro.strip()}%")
 
-        # 5. Filtro por número (búsqueda dentro del JSONB detalle_venta)
+        # 4. Filtro por número (búsqueda dentro del JSONB detalle_venta)
         if numero_filtro and numero_filtro.strip() != "":
             sql += """
                 AND EXISTS (
@@ -869,7 +910,7 @@ async def reporte_ventas_cliente(
             """
             params.append(numero_filtro.strip())
 
-        # 6. Completar la consulta
+        # 5. Completar la consulta
         sql += """
             GROUP BY v.num_recibo, v.cliente, v.cierre_asignado
             ORDER BY v.cliente, v.cierre_asignado
@@ -879,7 +920,7 @@ async def reporte_ventas_cliente(
         filas = cursor.fetchall()
         conn.close()
 
-        # 7. Formatear respuesta
+        # 6. Formatear respuesta
         resultado = []
         for num_recibo, cliente, cierre, total_numeros, total_monto in filas:
             resultado.append({
@@ -917,16 +958,7 @@ async def reporte_ventas_cliente_pdf(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Obtener id_mayorista del usuario
-        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
-        resultado = cursor.fetchone()
-        if not resultado or resultado[0] is None:
-            conn.close()
-            raise HTTPException(status_code=404, detail="Usuario sin mayorista")
-
-        id_mayorista = resultado[0]
-
-        # 2. Determinar rango de fechas
+        # 1. Determinar rango de fechas
         managua_tz = timezone(timedelta(hours=-6))
         hoy = datetime.now(managua_tz).date()
 
@@ -940,7 +972,7 @@ async def reporte_ventas_cliente_pdf(
         else:
             fecha_fin_dt = hoy
 
-        # 3. Consulta SQL: Agrupar por cliente y cierre
+        # 2. Consulta SQL: Agrupar por cliente y cierre
         cursor.execute("""
             SELECT 
                 cliente,
@@ -948,17 +980,16 @@ async def reporte_ventas_cliente_pdf(
                 SUM(cantidad) AS total_numeros,
                 SUM(total) AS total_monto
             FROM ventas
-            WHERE id_mayorista = %s
-              AND id_usuario = %s
+            WHERE id_usuario = %s
               AND DATE(fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
             GROUP BY cliente, cierre_asignado
             ORDER BY cliente, cierre_asignado
-        """, (id_mayorista, id_usuario, fecha_inicio_dt, fecha_fin_dt))
+        """, (id_usuario, fecha_inicio_dt, fecha_fin_dt))
 
         filas = cursor.fetchall()
         conn.close()
 
-        # 4. Generar PDF
+        # 3. Generar PDF
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=letter)
         width, height = letter
@@ -987,12 +1018,12 @@ async def reporte_ventas_cliente_pdf(
         total_general = 0
 
         for cliente, cierre, total_numeros, total_monto in filas:
-            if y < 50:  # Salto de página si no hay espacio
+            if y < 50:
                 c.showPage()
                 y = height - 50
                 c.setFont("Helvetica", 11)
 
-            c.drawString(50, y, cliente[:30])  # Truncar si es muy largo
+            c.drawString(50, y, cliente[:30])
             c.drawString(200, y, cierre)
             c.drawString(350, y, str(total_numeros))
             c.drawString(450, y, f"{total_monto:.2f}")
@@ -1040,12 +1071,12 @@ async def reporte_cierre(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Obtener id_mayorista del usuario (aunque no se use para filtrar, lo mantenemos por consistencia)
-        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
-        resultado = cursor.fetchone()
-        if not resultado or resultado[0] is None:
-            conn.close()
-            return {"vendedor": nombre_vendedor, "cierre": cierre, "numeros": {}, "total": 0.0}
+#        # 1. Obtener id_mayorista del usuario
+#        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+#        resultado = cursor.fetchone()
+#        if not resultado or resultado[0] is None:
+#            conn.close()
+#            return {"vendedor": nombre_vendedor, "cierre": cierre, "numeros": {}, "total": 0.0}
 
         # 2. Determinar fecha y cierre
         managua_tz = timezone(timedelta(hours=-6))
@@ -1059,20 +1090,34 @@ async def reporte_cierre(
         if not cierre:
             raise HTTPException(status_code=400, detail="Debe seleccionar un cierre válido")
 
-        # 3. Consulta SQL: Agrupar por número individual, sumando el precio_unitario
-        cursor.execute("""
-            SELECT 
-                num_individual AS numero,
-                SUM((detalle->>'precio')::numeric) AS monto_total
-            FROM ventas v,
-            LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
-            LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
-            WHERE v.cierre_asignado = %s
-              AND v.id_usuario = %s
-              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
-            GROUP BY num_individual
-            ORDER BY num_individual ASC
-        """, (cierre, id_usuario, fecha_consulta))
+        # 3. Consulta SQL: Si el cierre empieza con "Cierre Domingo", ignorar el filtro de fecha
+        if cierre.startswith("Cierre Domingo"):
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_usuario = %s
+                GROUP BY num_individual
+                ORDER BY num_individual ASC
+            """, (cierre, id_usuario))
+        else:
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_usuario = %s
+                  AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
+                GROUP BY num_individual
+                ORDER BY num_individual ASC
+            """, (cierre, id_usuario, fecha_consulta))
 
         filas = cursor.fetchall()
         conn.close()
@@ -1090,7 +1135,7 @@ async def reporte_cierre(
             if num_str not in numeros:
                 numeros[num_str] = 0.0
 
-        # 6. Ordenar los números de forma natural (00, 01, 02, ...)
+        # 6. Ordenar los números
         numeros_ordenados = {k: numeros[k] for k in sorted(numeros.keys())}
 
         return {
@@ -1126,12 +1171,12 @@ async def reporte_cierre_pdf(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Validar mayorista y obtener datos
-        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        # 1. Validar que el usuario existe
+        cursor.execute("SELECT id_usuario FROM usuarios WHERE id_usuario = %s", (id_usuario,))
         resultado = cursor.fetchone()
-        if not resultado or resultado[0] is None:
+        if not resultado:
             conn.close()
-            raise HTTPException(status_code=404, detail="Usuario sin mayorista")
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
         # 2. Determinar fecha y cierre
         managua_tz = timezone(timedelta(hours=-6))
@@ -1146,20 +1191,34 @@ async def reporte_cierre_pdf(
             conn.close()
             raise HTTPException(status_code=400, detail="Debe seleccionar un cierre válido")
 
-        # 3. Consulta SQL para obtener los datos del cierre
-        cursor.execute("""
-            SELECT 
-                num_individual AS numero,
-                SUM((detalle->>'precio')::numeric) AS monto_total
-            FROM ventas v,
-            LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
-            LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
-            WHERE v.cierre_asignado = %s
-              AND v.id_usuario = %s
-              AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
-            GROUP BY num_individual
-            ORDER BY num_individual ASC
-        """, (cierre, id_usuario, fecha_consulta))
+        # 3. Consulta SQL: Si el cierre empieza con "Cierre Domingo", ignorar el filtro de fecha
+        if cierre.startswith("Cierre Domingo"):
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_usuario = %s
+                GROUP BY num_individual
+                ORDER BY num_individual ASC
+            """, (cierre, id_usuario))
+        else:
+            cursor.execute("""
+                SELECT 
+                    num_individual AS numero,
+                    SUM((detalle->>'precio')::numeric) AS monto_total
+                FROM ventas v,
+                LATERAL jsonb_array_elements(v.detalle_venta) AS detalle,
+                LATERAL jsonb_array_elements_text(detalle->'numeros') AS num_individual
+                WHERE v.cierre_asignado = %s
+                  AND v.id_usuario = %s
+                  AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') = %s
+                GROUP BY num_individual
+                ORDER BY num_individual ASC
+            """, (cierre, id_usuario, fecha_consulta))
 
         filas = cursor.fetchall()
         conn.close()
@@ -1176,12 +1235,10 @@ async def reporte_cierre_pdf(
         c = canvas.Canvas(buffer, pagesize=letter)
         width, height = letter
 
-        # Colores
         color_oro = (0.85, 0.65, 0.13)
         color_oscuro = (0.15, 0.15, 0.15)
         color_gris = (0.4, 0.4, 0.4)
 
-        # === ENCABEZADO ===
         c.setStrokeColor(color_oro)
         c.setLineWidth(2)
         c.line(50, height - 50, width - 50, height - 50)
@@ -1194,16 +1251,13 @@ async def reporte_cierre_pdf(
         c.setFillColor(color_gris)
         c.drawCentredString(width / 2, height - 100, f"Generado el {datetime.now(managua_tz).strftime('%d-%m-%Y %H:%M:%S')}")
 
-        # === DATOS GENERALES ===
         y = height - 140
-        line_height = 20
         c.setFont("Helvetica-Bold", 11)
         c.setFillColor(color_oscuro)
         c.drawString(50, y, f"Vendedor: {nombre_vendedor}")
         c.drawString(250, y, f"Cierre: {cierre}")
         c.drawString(450, y, f"Fecha: {fecha_consulta.strftime('%d-%m-%Y')}")
 
-        # === DETALLE POR NÚMERO ===
         y -= 40
         c.setFont("Helvetica-Bold", 10)
         c.setFillColor(color_oscuro)
@@ -1217,7 +1271,7 @@ async def reporte_cierre_pdf(
         y -= 20
         c.setFont("Helvetica", 10)
         for num, monto in sorted(numeros.items()):
-            if y < 50:  # Salto de página
+            if y < 50:
                 c.showPage()
                 y = height - 50
                 c.setFont("Helvetica", 10)
@@ -1227,7 +1281,6 @@ async def reporte_cierre_pdf(
                 c.drawRightString(width - 50, y, f"L. {monto:.2f}")
             y -= 15
 
-        # === TOTAL GENERAL ===
         y -= 15
         c.setStrokeColor(color_oro)
         c.setLineWidth(1)

@@ -119,9 +119,10 @@
             </div>
 
             <!-- Botón para limpiar selección -->
-            <div style="display: flex; justify-content: center; margin: 5px 0 15px 0;">
+            <!-- Botón para limpiar selección + Input de precio rápido + Botón WhatsApp -->
+            <div style="display: flex; justify-content: center; align-items: center; gap: 10px; margin: 5px 0 15px 0; flex-wrap: wrap;">
                 <button onclick="limpiarSeleccion()" style="width: auto; padding: 8px 25px; background: #d32f2f; color: white; font-size: 14px; border-radius: 8px;">🗑️ Limpiar Selección</button>
-                 <!-- Botón para abrir el importador de WhatsApp -->
+                <input type="number" id="precioGlobalInput" placeholder="Precio global" step="1" min="1" style="width: 150px; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 8px; font-size: 14px;">
                 <button onclick="abrirWhatsAppModal()" style="width: auto; padding: 8px 25px; background: #25d366; color: white; font-size: 14px; border-radius: 8px; border: none; cursor: pointer;">📱 Importar WhatsApp</button>
             </div>
 
@@ -520,18 +521,24 @@
         }
 
         function toggleNumber(num, btn) {
-            // Si el número ya está seleccionado, lo desmarcamos si el usuario hace clic en él
+            // Si el número ya está seleccionado, abrimos el modal (comportamiento actual)
             if (btn.classList.contains('selected')) {
-                // Opcional: si quieres permitir desmarcar, conservamos la lógica actual.
-                // Pero para permitir múltiples selecciones del mismo número, solo necesitamos
-                // que al hacer clic en un número ya seleccionado, se abra el modal para agregar otra fila.
-                // Por ahora, si el usuario hace clic en un número ya seleccionado, abrimos el modal.
                 abrirModalPrecio(num, btn);
                 return;
             }
 
-            // Si no está seleccionado, abrimos el modal para pedir el precio
-            abrirModalPrecio(num, btn);
+            // Revisar si hay un precio global definido
+            const precioGlobal = parseFloat(document.getElementById('precioGlobalInput').value);
+
+            if (precioGlobal && precioGlobal > 0) {
+                // Si hay precio global, agregar directamente sin abrir el modal
+                btn.classList.add('selected');
+                agregarAResumen(num, precioGlobal);
+                actualizarMontosTablero();
+            } else {
+                // Si no hay precio global, abrir el modal (comportamiento actual)
+                abrirModalPrecio(num, btn);
+            }
         }
 
         let pendingNumber = null;
@@ -717,6 +724,7 @@
             document.getElementById('resumenTableBody').innerHTML = '';
             document.getElementById('resumenContainer').style.display = 'none';
             document.getElementById('resumenTotal').innerText = 'L. 0.00';
+            // NO limpiar el precio global (se mantiene hasta que el usuario haga la venta)
         }
 
         // Variable temporal para guardar los números de la opción rápida
@@ -797,6 +805,7 @@
                 limpiarSeleccion();
                 document.getElementById('clienteInput').value = '';
                 document.getElementById('cierreSelect').value = '';
+                document.getElementById('precioGlobalInput').value = '';
                 actualizarMontosTablero();
             } else {
                 if (res.status === 401) {
@@ -971,8 +980,27 @@
             document.getElementById('reporteCierreModal').style.display = 'flex';
             const hoy = obtenerFechaNicaragua();
             document.getElementById('reporteCierreFecha').value = hoy;
-            document.getElementById('reporteCierreSelect').value = '';
             document.getElementById('reporteCierreResultado').innerHTML = '';
+
+            // Verificar si el usuario tiene cierre domingo
+            const esDomingo = localStorage.getItem('loteria_domingo') === 'true';
+            const selectCierre = document.getElementById('reporteCierreSelect');
+
+            if (esDomingo) {
+                // Solo mostrar la opción del cierre domingo
+                const fechaDomingo = obtenerFechaDomingo();
+                selectCierre.innerHTML = `<option value="Cierre Domingo ${fechaDomingo}">Cierre Domingo ${fechaDomingo}</option>`;
+                selectCierre.value = `Cierre Domingo ${fechaDomingo}`;
+            } else {
+                // Restaurar las opciones normales
+                selectCierre.innerHTML = `
+                    <option value="">Seleccione un cierre</option>
+                    <option value="Cierre 1 (11am)">Cierre 1 (11am)</option>
+                    <option value="Cierre 2 (3pm)">Cierre 2 (3pm)</option>
+                    <option value="Cierre 3 (9pm)">Cierre 3 (9pm)</option>
+                `;
+                selectCierre.value = '';
+            }
         }
 
         function cerrarReporteCierre() {
@@ -1336,6 +1364,7 @@
                 <button onclick="cargarReporteCierre()" style="width: auto; padding: 8px 15px; background: #00a86b; color: white; border: none; border-radius: 5px;">🔍 Cargar</button>
                 <button onclick="descargarReporteCierrePDF()" style="width: auto; padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 5px;">📄 Descargar PDF</button>
             </div>
+            <div id="reporteCierreResultado" style="max-height: 500px; overflow-y: auto;"></div>
         </div>
     </div> 
     
