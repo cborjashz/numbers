@@ -192,7 +192,7 @@
                 </div>
             </div>
 
-            <button onclick="vender()">🟢 VENDER</button>
+            <button id="btnVender" onclick="vender()">🟢 VENDER</button>
             <div id="resultMsg" class="message"></div>
         </div>
     </div>
@@ -768,54 +768,79 @@
                 }
             }
 
-            // Ya no validamos que el cliente esté vacío, usamos "Cliente Final" por defecto
-
             const token = localStorage.getItem('loteria_token');
             if (!token) {
                 document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
                 logout();
                 return;
             }
-            
-            const res = await fetch(API + '/vender', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + token
-                },
-                body: JSON.stringify({
-                    nombre_vendedor: currentUser,
-                    cliente: cliente,
-                    items: items,
-                    cierre_elegido: cierreElegido || null 
-                })
-            });
-            
-            // ... el resto del código (descarga del PDF, limpieza) sigue igual ...
-            
-            if (res.ok) {
-                // Abrir el PDF en una nueva pestaña (vista previa automática)
-                const blob = await res.blob();
-                const pdfUrl = window.URL.createObjectURL(blob);
-                window.open(pdfUrl, '_blank');
-                window.URL.revokeObjectURL(pdfUrl);
-                
-                document.getElementById('resultMsg').innerHTML = '<span class="success">✅ Venta exitosa! El recibo se ha mostrado en una nueva pestaña.</span>';
-                
-                // Limpiar todo
-                limpiarSeleccion();
-                document.getElementById('clienteInput').value = '';
-                document.getElementById('cierreSelect').value = '';
-                document.getElementById('precioGlobalInput').value = '';
-                actualizarMontosTablero();
-            } else {
-                if (res.status === 401) {
-                    document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
-                    logout();
-                    return;
+
+            // === DESHABILITAR EL BOTÓN VENDER MIENTRAS PROCESA ===
+            const btnVender = document.getElementById('btnVender');
+            btnVender.disabled = true;
+            btnVender.style.opacity = '0.6';
+            btnVender.style.cursor = 'not-allowed';
+            btnVender.innerText = '⏳ Procesando...';
+
+            try {
+                const res = await fetch(API + '/vender', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({
+                        nombre_vendedor: currentUser,
+                        cliente: cliente,
+                        items: items,
+                        cierre_elegido: cierreElegido || null
+                    })
+                });
+
+                if (res.ok) {
+                    // === DESCARGA + VISTA PREVIA HÍBRIDA ===
+                    const blob = await res.blob();
+                    const pdfUrl = window.URL.createObjectURL(blob);
+
+                    // 1. Descargar el archivo automáticamente
+                    const a = document.createElement('a');
+                    a.href = pdfUrl;
+                    a.download = `recibo_venta.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+
+                    // 2. Abrir en nueva pestaña (vista previa automática)
+                    window.open(pdfUrl, '_blank');
+
+                    // 3. Liberar el blob después de un momento
+                    setTimeout(() => window.URL.revokeObjectURL(pdfUrl), 30000);
+
+                    document.getElementById('resultMsg').innerHTML = '<span class="success">✅ Venta exitosa! El recibo se ha descargado y mostrado en una nueva pestaña.</span>';
+
+                    // Limpiar todo
+                    limpiarSeleccion();
+                    document.getElementById('clienteInput').value = '';
+                    document.getElementById('cierreSelect').value = '';
+                    document.getElementById('precioGlobalInput').value = '';
+                    actualizarMontosTablero();
+                } else {
+                    if (res.status === 401) {
+                        document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Sesión expirada. Por favor, vuelva a iniciar sesión.</span>';
+                        logout();
+                        return;
+                    }
+                    const data = await res.json();
+                    document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
                 }
-                const data = await res.json();
-                document.getElementById('resultMsg').innerHTML = `<span class="error">❌ ${data.detail}</span>`;
+            } catch (error) {
+                document.getElementById('resultMsg').innerHTML = '<span class="error">❌ Error de conexión al procesar la venta.</span>';
+            } finally {
+                // === REHABILITAR EL BOTÓN VENDER ===
+                btnVender.disabled = false;
+                btnVender.style.opacity = '1';
+                btnVender.style.cursor = 'pointer';
+                btnVender.innerText = '🟢 VENDER';
             }
         }
 
