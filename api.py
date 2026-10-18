@@ -12,9 +12,10 @@ from datetime import timezone, timedelta
 import json
 import random
 import secrets  # Para generar tokens seguros
-from dotenv import load_dotenv
 
-load_dotenv()
+# from dotenv import load_dotenv
+
+# load_dotenv()
 
 # ===== CONFIGURACIÓN =====
 DATABASE_URL = os.getenv("DATABASE_URL")
