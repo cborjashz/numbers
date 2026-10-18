@@ -1071,12 +1071,10 @@ async def reporte_cierre(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-#        # 1. Obtener id_mayorista del usuario
-#        cursor.execute("SELECT id_mayorista FROM usuarios WHERE id_usuario = %s", (id_usuario,))
-#        resultado = cursor.fetchone()
-#        if not resultado or resultado[0] is None:
-#            conn.close()
-#            return {"vendedor": nombre_vendedor, "cierre": cierre, "numeros": {}, "total": 0.0}
+        # 1. Obtener el porcentaje de beneficio del usuario
+        cursor.execute("SELECT porcentaje_beneficio FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado_porcentaje = cursor.fetchone()
+        porcentaje_beneficio = float(resultado_porcentaje[0]) if resultado_porcentaje else 0.0
 
         # 2. Determinar fecha y cierre
         managua_tz = timezone(timedelta(hours=-6))
@@ -1129,13 +1127,16 @@ async def reporte_cierre(
             numeros[num] = float(monto)
             total_general += float(monto)
 
-        # 5. Asegurar que todos los números del 00 al 99 estén presentes (con 0 si no hay ventas)
+        # 5. Calcular el beneficio del vendedor
+        monto_beneficio = total_general * (porcentaje_beneficio / 100.0)
+
+        # 6. Asegurar que todos los números del 00 al 99 estén presentes (con 0 si no hay ventas)
         for i in range(100):
             num_str = f"{i:02d}"
             if num_str not in numeros:
                 numeros[num_str] = 0.0
 
-        # 6. Ordenar los números
+        # 7. Ordenar los números
         numeros_ordenados = {k: numeros[k] for k in sorted(numeros.keys())}
 
         return {
@@ -1143,7 +1144,9 @@ async def reporte_cierre(
             "cierre": cierre,
             "fecha": fecha_consulta.strftime("%d-%m-%Y"),
             "numeros": numeros_ordenados,
-            "total": total_general
+            "total": total_general,
+            "porcentaje_beneficio": porcentaje_beneficio,
+            "monto_beneficio": monto_beneficio
         }
 
     except Exception as e:
@@ -1171,12 +1174,10 @@ async def reporte_cierre_pdf(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
-        # 1. Validar que el usuario existe
-        cursor.execute("SELECT id_usuario FROM usuarios WHERE id_usuario = %s", (id_usuario,))
-        resultado = cursor.fetchone()
-        if not resultado:
-            conn.close()
-            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        # 1. Obtener el porcentaje de beneficio del usuario
+        cursor.execute("SELECT porcentaje_beneficio FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado_porcentaje = cursor.fetchone()
+        porcentaje_beneficio = float(resultado_porcentaje[0]) if resultado_porcentaje else 0.0
 
         # 2. Determinar fecha y cierre
         managua_tz = timezone(timedelta(hours=-6))
@@ -1230,7 +1231,10 @@ async def reporte_cierre_pdf(
             numeros[num] = float(monto)
             total_general += float(monto)
 
-        # 5. Generar PDF
+        # 5. Calcular el beneficio del vendedor
+        monto_beneficio = total_general * (porcentaje_beneficio / 100.0)
+
+        # 6. Generar PDF
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=letter)
         width, height = letter
@@ -1238,6 +1242,7 @@ async def reporte_cierre_pdf(
         color_oro = (0.85, 0.65, 0.13)
         color_oscuro = (0.15, 0.15, 0.15)
         color_gris = (0.4, 0.4, 0.4)
+        color_verde_oscuro = (0.10, 0.35, 0.20)
 
         c.setStrokeColor(color_oro)
         c.setLineWidth(2)
@@ -1271,7 +1276,7 @@ async def reporte_cierre_pdf(
         y -= 20
         c.setFont("Helvetica", 10)
         for num, monto in sorted(numeros.items()):
-            if y < 50:
+            if y < 100:
                 c.showPage()
                 y = height - 50
                 c.setFont("Helvetica", 10)
@@ -1293,6 +1298,22 @@ async def reporte_cierre_pdf(
         c.setFont("Helvetica-Bold", 16)
         c.setFillColor(color_oro)
         c.drawRightString(width - 50, y, f"L. {total_general:.2f}")
+
+        # === BENEFICIO DEL VENDEDOR ===
+        y -= 30
+        c.setStrokeColor(color_verde_oscuro)
+        c.setLineWidth(1)
+        c.line(50, y + 10, width - 50, y + 10)
+
+        c.setFont("Helvetica-Bold", 14)
+        c.setFillColor(color_oscuro)
+        c.drawString(50, y - 10, "BENEFICIO DEL VENDEDOR:")
+        c.setFont("Helvetica", 12)
+        c.setFillColor(color_gris)
+        c.drawString(50, y - 30, f"Porcentaje: {porcentaje_beneficio:.2f}%")
+        c.setFont("Helvetica-Bold", 16)
+        c.setFillColor(color_verde_oscuro)
+        c.drawRightString(width - 50, y - 10, f"L. {monto_beneficio:.2f}")
 
         c.save()
         buffer.seek(0)

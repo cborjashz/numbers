@@ -149,11 +149,13 @@
                 </select>
             </div>
 
-             <!-- Cuadro de resumen del día/cierre -->
+            <!-- Cuadro de resumen del día/cierre -->
             <div id="resumenPDV" style="display: flex; gap: 15px; margin: 10px 0; padding: 10px 15px; background: #3b3b5c; border-radius: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; display: none;">
                 <div><strong>📅 Fecha:</strong> <span id="resumenFecha">-</span></div>
                 <div><strong>🕒 Cierre:</strong> <span id="resumenCierre">-</span></div>
                 <div><strong>💰 Total vendido:</strong> <span id="resumenTotalPDV" style="color: #ffd700; font-weight: bold;">L. 0.00</span></div>
+                <!-- NUEVA LÍNEA PARA EL BENEFICIO -->
+                <div><strong>📈 Beneficio:</strong> <span id="resumenBeneficioPDV" style="color: #00a86b; font-weight: bold;">L. 0.00</span></div>
             </div>
 
             <!-- MODAL DE PRECIO POR NÚMERO -->
@@ -241,49 +243,111 @@
         }
         
         // Login
-        async function login() {
+        async function loginInterno(cerrarVieja = false) {
             const user = document.getElementById('loginUser').value;
             const pass = document.getElementById('loginPass').value;
-            const res = await fetch(API + '/login', {
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({usuario: user, password: pass})
-            });
-            const data = await res.json();
-            if (res.ok) {
-                // Guardar datos en el navegador
-                currentUser = data.usuario;
-                currentToken = data.token;
-                localStorage.setItem('loteria_token', data.token);
-                localStorage.setItem('loteria_usuario', data.usuario);
-                localStorage.setItem('loteria_domingo', data.domingo ? 'true' : 'false');
+            
+            // Limpiamos mensajes previos
+            document.getElementById('loginMsg').innerText = '';
 
-                document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
-                document.getElementById('loginBox').classList.remove('active');
-                document.getElementById('gameBox').classList.add('active');
-                cargarOpciones();
-                generarTablero();
-                // Establecer fecha actual por defecto en el selector
-                const hoy = new Date();
-                const fechaLocal = hoy.toISOString().split('T')[0];
-                document.getElementById('fechaSelect').value = fechaLocal;
+            try {
+                const res = await fetch(API + '/login', {
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({usuario: user, password: pass, cerrar_la_mas_antigua: cerrarVieja})
+                });
+                
+                const data = await res.json();
+                
+                if (res.ok) {
+                    // Guardar datos en el navegador
+                    currentUser = data.usuario;
+                    currentToken = data.token;
+                    localStorage.setItem('loteria_token', data.token);
+                    localStorage.setItem('loteria_usuario', data.usuario);
+                    localStorage.setItem('loteria_domingo', data.domingo ? 'true' : 'false');
 
-                // Ajustar el selectbox de cierre según el campo "domingo"
-                ajustarSelectorCierre(data.domingo);
+                    document.getElementById('userDisplay').innerText = '👤 ' + currentUser;
+                    document.getElementById('loginBox').classList.remove('active');
+                    document.getElementById('gameBox').classList.add('active');
+                    cargarOpciones();
+                    generarTablero();
+                    
+                    const hoy = new Date();
+                    const fechaLocal = hoy.toISOString().split('T')[0];
+                    document.getElementById('fechaSelect').value = fechaLocal;
 
-            } else {
-                document.getElementById('loginMsg').innerText = '❌ ' + data.detail;
+                    ajustarSelectorCierre(data.domingo);
+
+                    // NUEVA LÍNEA: Actualizar el tablero inmediatamente después de cargar las opciones
+                    actualizarMontosTablero();
+
+
+                } else {
+                    // Si el error es el límite alcanzado
+                    if (data.detail === "LIMITE_ALCANZADO") {
+                        const confirmar = confirm("⚠️ Has alcanzado el límite de dispositivos conectados.\n\n¿Deseas cerrar la sesión más antigua y entrar desde este dispositivo?");
+                        if (confirmar) {
+                            await loginInterno(true);
+                        } else {
+                            document.getElementById('loginMsg').innerText = '❌ Acción cancelada. Cierra sesión en otro dispositivo para entrar.';
+                        }
+                    } else {
+                        document.getElementById('loginMsg').innerText = '❌ ' + (data.detail || 'Error al iniciar sesión');
+                    }
+                }
+            } catch (error) {
+                console.error("Error en login:", error);
+                document.getElementById('loginMsg').innerText = '❌ Error de conexión con el servidor.';
             }
         }
 
+        function login() {
+            loginInterno(false);
+        }
+
+        // Función para ajustar el selectbox de cierre según el campo "domingo" del usuario
         // Función para ajustar el selectbox de cierre según el campo "domingo" del usuario
         function ajustarSelectorCierre(esDomingo) {
             const select = document.getElementById('cierreSelect');
             
             if (esDomingo) {
-                // Reemplazar todas las opciones con una sola
-                select.innerHTML = `<option value="Cierre Domingo ${obtenerFechaDomingo()}">Cierre Domingo ${obtenerFechaDomingo()}</option>`;
-                select.value = `Cierre Domingo ${obtenerFechaDomingo()}`;
+                // Generar los últimos 5 domingos (incluyendo el actual/próximo)
+                let opciones = '';
+                const ahora = new Date();
+                const nicaragua = new Date(ahora.getTime() - (6 * 60 * 60 * 1000));
+                const diaSemana = nicaragua.getUTCDay();
+                
+                let diasParaDomingo = 0;
+                if (diaSemana !== 0) {
+                    diasParaDomingo = 7 - diaSemana;
+                } else if (nicaragua.getUTCHours() >= 12) {
+                    // Si hoy es domingo después de las 12pm, el cierre activo es el próximo domingo
+                    diasParaDomingo = 7;
+                }
+                
+                const meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+                              "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+                
+                // Iterar desde el domingo más reciente hacia atrás (4 domingos atrás)
+                for (let i = 0; i >= -4; i--) {
+                    const domingo = new Date(nicaragua.getTime() + ((diasParaDomingo + (i * 7)) * 24 * 60 * 60 * 1000));
+                    const año = domingo.getUTCFullYear();
+                    const mes = domingo.getUTCMonth();
+                    const dia = domingo.getUTCDate();
+                    
+                    const fechaStr = `${dia} ${meses[mes]} ${año}`;
+                    const valor = `Cierre Domingo ${fechaStr}`;
+                    
+                    // El primero (i=0) es el domingo activo/próximo
+                    const textoOpcion = i === 0 ? `Cierre Domingo ${fechaStr} (Activo)` : `Cierre Domingo ${fechaStr}`;
+                    
+                    opciones += `<option value="${valor}">${textoOpcion}</option>`;
+                }
+                
+                select.innerHTML = opciones;
+                // Seleccionar por defecto el primero (el activo)
+                select.selectedIndex = 0;
             } else {
                 // Restaurar las opciones normales
                 select.innerHTML = `
@@ -408,6 +472,11 @@
                     document.getElementById('resumenFecha').innerText = fecha || 'Hoy';
                     document.getElementById('resumenCierre').innerText = cierre || 'Automático';
                     document.getElementById('resumenTotalPDV').innerText = `L. ${datos.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    
+                    // Calcular y mostrar el beneficio
+                    const porcentaje = datos.porcentaje_beneficio || 0;
+                    const beneficio = datos.total * (porcentaje / 100);
+                    document.getElementById('resumenBeneficioPDV').innerText = `L. ${beneficio.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${porcentaje.toFixed(2)}%)`;
                 } else {
                     resumenDiv.style.display = 'none';
                 }
@@ -874,7 +943,6 @@
             }
 
             try {
-                // Construir la URL con los parámetros
                 let url = `${API}/reporte-ventas-cliente?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
                 if (clienteFiltro && clienteFiltro.trim() !== "") {
                     url += `&cliente_filtro=${encodeURIComponent(clienteFiltro.trim())}`;
@@ -899,15 +967,13 @@
 
                 const datos = await res.json();
 
-                if (datos.length === 0) {
+                if (datos.ventas.length === 0) {
                     document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #aaa;">No hay ventas en el rango seleccionado</td></tr>';
                     return;
                 }
 
                 let html = '';
-                let totalGeneral = 0;
-                datos.forEach(item => {
-                    totalGeneral += item.total_monto;
+                datos.ventas.forEach(item => {
                     html += `
                         <tr style="border-bottom: 1px solid #3b3b5c; font-size: 13px;">
                             <td style="padding: 8px; width: 20%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.cliente}</td>
@@ -922,10 +988,20 @@
                     `;
                 });
 
+                // Agregar fila del Beneficio
+                html += `
+                    <tr style="background: #2d2d44; color: #ffd700; font-weight: bold; font-size: 13px; border-top: 2px solid #3b3b5c;">
+                        <td colspan="3" style="padding: 8px 12px; text-align: right;">BENEFICIO (${datos.porcentaje_beneficio.toFixed(2)}%)</td>
+                        <td style="padding: 8px; text-align: right;">L. ${datos.beneficio_general.toFixed(2)}</td>
+                        <td></td>
+                    </tr>
+                `;
+
+                // Agregar fila del Total General
                 html += `
                     <tr style="background: #00a86b; color: white; font-weight: bold; font-size: 13px;">
                         <td colspan="3" style="padding: 8px 12px; text-align: right;">TOTAL GENERAL</td>
-                        <td style="padding: 8px; text-align: right;">L. ${totalGeneral.toFixed(2)}</td>
+                        <td style="padding: 8px; text-align: right;">L. ${datos.total_general.toFixed(2)}</td>
                         <td></td>
                     </tr>
                 `;
@@ -933,6 +1009,7 @@
                 document.getElementById('reporteTableBody').innerHTML = html;
 
             } catch (error) {
+                console.error(error);
                 document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff5555;">❌ Error de conexión</td></tr>';
             }
         }
@@ -999,6 +1076,9 @@
                 
                 // Restaurar el selectbox según el campo "domingo"
                 ajustarSelectorCierre(savedDomingo === 'true');
+
+                // NUEVA LÍNEA: Actualizar el tablero al recargar la página
+                actualizarMontosTablero();
             }
         };
 
@@ -1313,7 +1393,7 @@
 
                 // --- FORMATO 4: "DE" (números + "de" + precio) ---
                 // Ejemplo: "78 de 50" → 78 a 50
-                // Ejemplo: "03 de 10" → 03 a 10
+                // Ejemplo: "030 33 de 15" → 03, 30 y 33 a 15
                 const deRegex = /^([\d\s,]+)\s+de\s+(\d+(?:\.\d+)?)/i;
                 let deMatch = limpia.match(deRegex);
                 if (deMatch) {
@@ -1323,9 +1403,24 @@
                         // Separar por comas o espacios
                         const numeros = numerosStr.split(/[\s,]+/).filter(n => n !== '');
                         numeros.forEach(num => {
-                            const val = parseInt(num, 10);
-                            if (!isNaN(val) && val >= 0 && val <= 99) {
-                                items.push({ numero: num.padStart(2, '0'), precio: precio });
+                            // NUEVA CONDICIÓN: Si el bloque tiene 3 dígitos, hacer revés y derecho
+                            if (num.length === 3) {
+                                const num1 = num.substring(0, 2);
+                                const num2 = num.substring(1, 3);
+                                const val1 = parseInt(num1, 10);
+                                const val2 = parseInt(num2, 10);
+                                if (!isNaN(val1) && val1 >= 0 && val1 <= 99) {
+                                    items.push({ numero: num1, precio: precio });
+                                }
+                                if (!isNaN(val2) && val2 >= 0 && val2 <= 99) {
+                                    items.push({ numero: num2, precio: precio });
+                                }
+                            } else {
+                                // Si tiene 1 o 2 dígitos, se procesa normal
+                                const val = parseInt(num, 10);
+                                if (!isNaN(val) && val >= 0 && val <= 99) {
+                                    items.push({ numero: num.padStart(2, '0'), precio: precio });
+                                }
                             }
                         });
                         return; // Ya procesamos esta línea

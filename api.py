@@ -12,6 +12,9 @@ from datetime import timezone, timedelta
 import json
 import random
 import secrets  # Para generar tokens seguros
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ===== CONFIGURACIÓN =====
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -23,6 +26,7 @@ templates = Jinja2Templates(directory="templates")
 class LoginRequest(BaseModel):
     usuario: str
     password: str
+    cerrar_la_mas_antigua: bool = False
 
 class VentaRequest(BaseModel):
     nombre_vendedor: str
@@ -339,17 +343,52 @@ async def login(data: LoginRequest):
         if fecha_expiracion and fecha_expiracion < ahora:
             raise HTTPException(status_code=401, detail="Licencia del usuario expirada")
 
-        # 4. Contar sesiones activas y verificar límite
+        # 4. Limpieza previa de sesiones caducadas (para no contar fantasmas)
+        cursor.execute("""
+            UPDATE sesiones_activas
+            SET activo = FALSE
+            WHERE activo = TRUE AND fecha_expiracion < %s
+        """, (ahora,))
+        cursor.execute("""
+            DELETE FROM sesiones_activas
+            WHERE activo = FALSE AND fecha_expiracion < %s - INTERVAL '1 days'
+        """, (ahora,))
+        conn.commit()
+
+        # 5. Contar sesiones activas válidas y verificar límite
         cursor.execute("""
             SELECT COUNT(*) FROM sesiones_activas 
-            WHERE id_usuario = %s AND activo = TRUE
-        """, (id_usuario,))
+            WHERE id_usuario = %s 
+              AND activo = TRUE 
+              AND fecha_expiracion >= %s
+        """, (id_usuario, ahora))
         sesiones_activas = cursor.fetchone()[0]
+
         if sesiones_activas >= max_sesiones:
-            raise HTTPException(
-                status_code=403, 
-                detail=f"Límite de sesiones alcanzado (máximo {max_sesiones}). Cierre otra sesión o contacte al administrador."
-            )
+            # Si el usuario ya confirmó en el frontend que quiere cerrar la más antigua
+            if data.cerrar_la_mas_antigua:
+                # Buscar la sesión más antigua y cerrarla
+                cursor.execute("""
+                    SELECT id_sesion FROM sesiones_activas
+                    WHERE id_usuario = %s AND activo = TRUE AND fecha_expiracion >= %s
+                    ORDER BY fecha_creacion ASC
+                    LIMIT 1
+                """, (id_usuario, ahora))
+                sesion_vieja = cursor.fetchone()
+                if sesion_vieja:
+                    cursor.execute("""
+                        UPDATE sesiones_activas
+                        SET activo = FALSE
+                        WHERE id_sesion = %s
+                    """, (sesion_vieja[0],))
+                    conn.commit()
+            else:
+                # No ha confirmado. Lanzamos el aviso especial para que el frontend pregunte.
+
+                raise HTTPException(
+                    status_code=403, 
+                    detail="LIMITE_ALCANZADO"
+                )
 
         # 5. Generar token único
         token = secrets.token_hex(32)
@@ -783,6 +822,11 @@ async def tablero_estado(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
+        # Obtener el porcentaje de beneficio del usuario
+        cursor.execute("SELECT porcentaje_beneficio FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        resultado_porcentaje = cursor.fetchone()
+        porcentaje_beneficio = float(resultado_porcentaje[0]) if resultado_porcentaje else 0.0
+
         # 1. Determinar fecha y cierre
         managua_tz = timezone(timedelta(hours=-6))
         ahora = datetime.now(managua_tz)
@@ -835,7 +879,8 @@ async def tablero_estado(
 
         return {
             "numeros": numeros,
-            "total": total_general
+            "total": total_general,
+            "porcentaje_beneficio": porcentaje_beneficio
         }
 
     except Exception as e:
@@ -865,6 +910,10 @@ async def reporte_ventas_cliente(
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
 
+        # Obtener el porcentaje de beneficio del usuario
+        cursor.execute("SELECT porcentaje_beneficio FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        porcentaje_beneficio = float(cursor.fetchone()[0] or 0)
+
         # 1. Determinar rango de fechas
         managua_tz = timezone(timedelta(hours=-6))
         hoy = datetime.now(managua_tz).date()
@@ -885,6 +934,7 @@ async def reporte_ventas_cliente(
                 v.num_recibo,
                 v.cliente,
                 v.cierre_asignado,
+                v.fecha_hora,
                 SUM(v.cantidad) AS total_numeros,
                 SUM(v.total) AS total_monto
             FROM ventas v
@@ -922,16 +972,28 @@ async def reporte_ventas_cliente(
 
         # 6. Formatear respuesta
         resultado = []
-        for num_recibo, cliente, cierre, total_numeros, total_monto in filas:
+        total_general = 0.0
+
+        for num_recibo, cliente, cierre, fecha_hora, total_numeros, total_monto in filas:
+            total_general += float(total_monto)
             resultado.append({
                 "num_recibo": num_recibo,
                 "cliente": cliente,
                 "cierre": cierre,
+                "fecha_hora": fecha_hora.strftime("%d-%m-%Y %I:%M %p"),
                 "total_numeros": int(total_numeros),
                 "total_monto": float(total_monto)
             })
 
-        return resultado
+        beneficio_general = total_general * (porcentaje_beneficio / 100.0)
+
+        # Retornamos un objeto con las ventas y los totales globales
+        return {
+            "ventas": resultado,
+            "total_general": total_general,
+            "porcentaje_beneficio": porcentaje_beneficio,
+            "beneficio_general": beneficio_general
+        }
 
     except Exception as e:
         if conn:
@@ -957,6 +1019,10 @@ async def reporte_ventas_cliente_pdf(
         conn = psycopg2.connect(DATABASE_URL, sslmode='require')
         cursor = conn.cursor()
         cursor.execute("SET TIMEZONE = 'America/Managua'")
+
+        # Obtener el porcentaje de beneficio del usuario
+        cursor.execute("SELECT porcentaje_beneficio FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        porcentaje_beneficio = float(cursor.fetchone()[0] or 0)
 
         # 1. Determinar rango de fechas
         managua_tz = timezone(timedelta(hours=-6))
@@ -1030,12 +1096,20 @@ async def reporte_ventas_cliente_pdf(
             total_general += total_monto
             y -= 20
 
-        # Total general
+        # Total general y Beneficio
         y -= 10
         c.setFont("Helvetica-Bold", 12)
         c.line(50, y - 5, 550, y - 5)
-        c.drawString(350, y, "TOTAL GENERAL")
-        c.drawString(450, y, f"{total_general:.2f}")
+        
+        beneficio_general = float(total_general) * (float(porcentaje_beneficio) / 100.0)
+        
+        c.drawString(300, y, "TOTAL GENERAL")
+        c.drawString(450, y, f"{float(total_general):.2f}")
+        
+        y -= 20
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(300, y, f"BENEFICIO ({float(porcentaje_beneficio):.2f}%)")
+        c.drawString(450, y, f"{float(beneficio_general):.2f}")
 
         c.save()
         buffer.seek(0)
