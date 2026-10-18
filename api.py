@@ -963,7 +963,7 @@ async def reporte_ventas_cliente(
 
         # 5. Completar la consulta
         sql += """
-            GROUP BY v.num_recibo, v.cliente, v.cierre_asignado
+            GROUP BY v.num_recibo, v.cliente, v.cierre_asignado, v.fecha_hora
             ORDER BY v.cliente, v.cierre_asignado
         """
 
