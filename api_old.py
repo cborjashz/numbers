@@ -13,9 +13,10 @@ import json
 import random
 import secrets  # Para generar tokens seguros
 
-# from dotenv import load_dotenv
 
-# load_dotenv()
+#from dotenv import load_dotenv
+
+#load_dotenv()
 
 # ===== CONFIGURACIÓN =====
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -929,15 +930,15 @@ async def reporte_ventas_cliente(
         else:
             fecha_fin_dt = hoy
 
-        # 2. Construir la consulta SQL base
+        # 2. Construir la consulta SQL base (Sin GROUP BY, para traer el detalle exacto de cada venta)
         sql = """
             SELECT 
                 v.num_recibo,
                 v.cliente,
                 v.cierre_asignado,
                 v.fecha_hora,
-                SUM(v.cantidad) AS total_numeros,
-                SUM(v.total) AS total_monto
+                v.cantidad AS total_numeros,
+                v.total AS total_monto
             FROM ventas v
             WHERE v.id_usuario = %s
               AND DATE(v.fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
@@ -961,11 +962,8 @@ async def reporte_ventas_cliente(
             """
             params.append(numero_filtro.strip())
 
-        # 5. Completar la consulta
-        sql += """
-            GROUP BY v.num_recibo, v.cliente, v.cierre_asignado, v.fecha_hora
-            ORDER BY v.cliente, v.cierre_asignado
-        """
+        # 5. Completar la consulta (Ordenar por fecha, la más reciente primero)
+        sql += " ORDER BY v.fecha_hora DESC"
 
         cursor.execute(sql, params)
         filas = cursor.fetchall()
@@ -1039,18 +1037,18 @@ async def reporte_ventas_cliente_pdf(
         else:
             fecha_fin_dt = hoy
 
-        # 2. Consulta SQL: Agrupar por cliente y cierre
+        # 2. Consulta SQL: Detalle exacto de ventas, sin agrupar
         cursor.execute("""
             SELECT 
                 cliente,
                 cierre_asignado,
-                SUM(cantidad) AS total_numeros,
-                SUM(total) AS total_monto
+                fecha_hora,
+                cantidad AS total_numeros,
+                total AS total_monto
             FROM ventas
             WHERE id_usuario = %s
               AND DATE(fecha_hora AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') BETWEEN %s AND %s
-            GROUP BY cliente, cierre_asignado
-            ORDER BY cliente, cierre_asignado
+            ORDER BY fecha_hora DESC
         """, (id_usuario, fecha_inicio_dt, fecha_fin_dt))
 
         filas = cursor.fetchall()
@@ -1074,9 +1072,10 @@ async def reporte_ventas_cliente_pdf(
         y = height - 120
         c.setFont("Helvetica-Bold", 12)
         c.drawString(50, y, "Cliente")
-        c.drawString(200, y, "Cierre")
-        c.drawString(350, y, "Números")
-        c.drawString(450, y, "Total L.")
+        c.drawString(150, y, "Fecha/Hora") # NUEVA
+        c.drawString(260, y, "Cierre")
+        c.drawString(400, y, "Números")
+        c.drawString(480, y, "Total L.")
         c.line(50, y - 5, 550, y - 5)
 
         # Datos
@@ -1084,16 +1083,20 @@ async def reporte_ventas_cliente_pdf(
         c.setFont("Helvetica", 11)
         total_general = 0
 
-        for cliente, cierre, total_numeros, total_monto in filas:
+        for cliente, cierre, fecha_hora, total_numeros, total_monto in filas:
             if y < 50:
                 c.showPage()
                 y = height - 50
                 c.setFont("Helvetica", 11)
 
-            c.drawString(50, y, cliente[:30])
-            c.drawString(200, y, cierre)
-            c.drawString(350, y, str(total_numeros))
-            c.drawString(450, y, f"{total_monto:.2f}")
+            # Formatear la fecha
+            fecha_str = fecha_hora.strftime("%d-%m-%Y %H:%M")
+
+            c.drawString(50, y, cliente[:20])        # Cliente (acortado a 20 para que quepa)
+            c.drawString(150, y, fecha_str)          # Fecha y Hora (NUEVA)
+            c.drawString(260, y, cierre[:20])        # Cierre
+            c.drawString(400, y, str(total_numeros)) # Números
+            c.drawString(480, y, f"{total_monto:.2f}") # Total
             total_general += total_monto
             y -= 20
 

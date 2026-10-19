@@ -13,7 +13,6 @@ import json
 import random
 import secrets  # Para generar tokens seguros
 
-
 #from dotenv import load_dotenv
 
 #load_dotenv()
@@ -351,10 +350,13 @@ async def login(data: LoginRequest):
             SET activo = FALSE
             WHERE activo = TRUE AND fecha_expiracion < %s
         """, (ahora,))
+        
+        # NUEVO: Borrar registros inactivos de días anteriores (al cambiar de día se limpian los de ayer)
         cursor.execute("""
             DELETE FROM sesiones_activas
-            WHERE activo = FALSE AND fecha_expiracion < %s - INTERVAL '1 days'
-        """, (ahora,))
+            WHERE activo = FALSE 
+              AND DATE(fecha_expiracion AT TIME ZONE 'UTC' AT TIME ZONE 'America/Managua') < CURRENT_DATE
+        """)
         conn.commit()
 
         # 5. Contar sesiones activas válidas y verificar límite

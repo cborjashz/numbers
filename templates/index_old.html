@@ -977,10 +977,11 @@
                     html += `
                         <tr style="border-bottom: 1px solid #3b3b5c; font-size: 13px;">
                             <td style="padding: 8px; width: 20%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.cliente}</td>
-                            <td style="padding: 8px; width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.cierre}</td>
-                            <td style="padding: 8px; width: 10%; text-align: center;">${item.total_numeros}</td>
-                            <td style="padding: 8px; width: 18%; text-align: right; white-space: nowrap;">L. ${item.total_monto.toFixed(2)}</td>
-                            <td style="padding: 8px; width: 17%; text-align: center; white-space: nowrap;">
+                            <td style="padding: 8px; width: 18%; white-space: nowrap; color: #aaa;">${item.fecha_hora}</td> <!-- NUEVA -->
+                            <td style="padding: 8px; width: 25%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.cierre}</td>
+                            <td style="padding: 8px; width: 7%; text-align: center;">${item.total_numeros}</td>
+                            <td style="padding: 8px; width: 15%; text-align: right; white-space: nowrap;">L. ${item.total_monto.toFixed(2)}</td>
+                            <td style="padding: 8px; width: 15%; text-align: center; white-space: nowrap;">
                                 <button onclick="cargarRecibo(${item.num_recibo})" style="background: #ffaa00; color: black; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; margin-right: 2px; font-size: 12px;" title="Ver Detalle">📂</button>
                                 <button onclick="reimprimirRecibo(${item.num_recibo})" style="background: #2196f3; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;" title="Reimprimir">🖨️</button>
                             </td>
@@ -991,7 +992,7 @@
                 // Agregar fila del Beneficio
                 html += `
                     <tr style="background: #2d2d44; color: #ffd700; font-weight: bold; font-size: 13px; border-top: 2px solid #3b3b5c;">
-                        <td colspan="3" style="padding: 8px 12px; text-align: right;">BENEFICIO (${datos.porcentaje_beneficio.toFixed(2)}%)</td>
+                        <td colspan="4" style="padding: 8px 12px; text-align: right;">BENEFICIO (${datos.porcentaje_beneficio.toFixed(2)}%)</td>
                         <td style="padding: 8px; text-align: right;">L. ${datos.beneficio_general.toFixed(2)}</td>
                         <td></td>
                     </tr>
@@ -1000,7 +1001,7 @@
                 // Agregar fila del Total General
                 html += `
                     <tr style="background: #00a86b; color: white; font-weight: bold; font-size: 13px;">
-                        <td colspan="3" style="padding: 8px 12px; text-align: right;">TOTAL GENERAL</td>
+                        <td colspan="4" style="padding: 8px 12px; text-align: right;">TOTAL GENERAL</td>
                         <td style="padding: 8px; text-align: right;">L. ${datos.total_general.toFixed(2)}</td>
                         <td></td>
                     </tr>
@@ -1470,6 +1471,7 @@
                     <thead style="background: #3b3b5c; position: sticky; top: 0;">
                         <tr>
                             <th style="padding: 8px; text-align: left;">Cliente</th>
+                            <th style="padding: 8px; text-align: left;">Fecha / Hora</th>
                             <th style="padding: 8px; text-align: left;">Cierre</th>
                             <th style="padding: 8px; text-align: center;">Números</th>
                             <th style="padding: 8px; text-align: right;">Total L.</th>
