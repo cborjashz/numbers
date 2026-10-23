@@ -273,8 +273,8 @@
                     cargarOpciones();
                     generarTablero();
                     
-                    const hoy = new Date();
-                    const fechaLocal = hoy.toISOString().split('T')[0];
+                    // Usar la función de Nicaragua para evitar saltos de día por UTC
+                    const fechaLocal = obtenerFechaNicaragua();
                     document.getElementById('fechaSelect').value = fechaLocal;
 
                     ajustarSelectorCierre(data.domingo);

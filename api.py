@@ -12,7 +12,6 @@ from datetime import timezone, timedelta
 import json
 import random
 import secrets  # Para generar tokens seguros
-
 #from dotenv import load_dotenv
 
 #load_dotenv()
@@ -900,7 +899,9 @@ async def reporte_ventas_cliente(
     fecha_inicio: str = None,
     fecha_fin: str = None,
     cliente_filtro: str = None,
-    numero_filtro: str = None
+    numero_filtro: str = None,
+    cierre_filtro: str = None  # <-- NUEVO PARÁMETRO
+
 ):
     # Validar token
     if not authorization or not authorization.startswith("Bearer "):
@@ -939,6 +940,7 @@ async def reporte_ventas_cliente(
                 v.cliente,
                 v.cierre_asignado,
                 v.fecha_hora,
+                v.detalle_venta,
                 v.cantidad AS total_numeros,
                 v.total AS total_monto
             FROM ventas v
@@ -964,24 +966,47 @@ async def reporte_ventas_cliente(
             """
             params.append(numero_filtro.strip())
 
-        # 5. Completar la consulta (Ordenar por fecha, la más reciente primero)
+        # 5. NUEVO: Filtro por cierre
+        if cierre_filtro and cierre_filtro.strip() != "":
+            sql += " AND v.cierre_asignado = %s"
+            params.append(cierre_filtro.strip())
+
+        # 6. Completar la consulta (Ordenar por fecha, la más reciente primero)
         sql += " ORDER BY v.fecha_hora DESC"
 
         cursor.execute(sql, params)
         filas = cursor.fetchall()
         conn.close()
 
-        # 6. Formatear respuesta
+        # 7. Formatear respuesta
         resultado = []
         total_general = 0.0
 
-        for num_recibo, cliente, cierre, fecha_hora, total_numeros, total_monto in filas:
+        for num_recibo, cliente, cierre, fecha_hora, detalle_json, total_numeros, total_monto in filas:
             total_general += float(total_monto)
+            
+            # Construir el texto de desglose (ej. "2 de 50, 3 de 70")
+            desglose_texto = ""
+            if detalle_json:
+                # Si psycopg2 lo trae como string, lo pasamos a dict, si ya es dict lo usamos
+                detalle = json.loads(detalle_json) if isinstance(detalle_json, str) else detalle_json
+                partes = []
+                for grupo in detalle:
+                    cant = len(grupo["numeros"])
+                    precio = grupo["precio"]
+                    # Formatear el precio para que no muestre .00 si es entero
+                    precio_str = int(precio) if float(precio).is_integer() else precio
+                    partes.append(f"{cant} nmros de {precio_str}")
+                desglose_texto = ", ".join(partes)
+            else:
+                desglose_texto = str(total_numeros) # Respaldo por si no hay detalle
+
             resultado.append({
                 "num_recibo": num_recibo,
                 "cliente": cliente,
                 "cierre": cierre,
                 "fecha_hora": fecha_hora.strftime("%d-%m-%Y %I:%M %p"),
+                "desglose": desglose_texto, # <--- Enviamos el texto armado
                 "total_numeros": int(total_numeros),
                 "total_monto": float(total_monto)
             })
@@ -1045,6 +1070,7 @@ async def reporte_ventas_cliente_pdf(
                 cliente,
                 cierre_asignado,
                 fecha_hora,
+                detalle_venta,  -- <-- AGREGADO
                 cantidad AS total_numeros,
                 total AS total_monto
             FROM ventas
@@ -1076,7 +1102,7 @@ async def reporte_ventas_cliente_pdf(
         c.drawString(50, y, "Cliente")
         c.drawString(150, y, "Fecha/Hora") # NUEVA
         c.drawString(260, y, "Cierre")
-        c.drawString(400, y, "Números")
+        c.drawString(380, y, "Desglose")
         c.drawString(480, y, "Total L.")
         c.line(50, y - 5, 550, y - 5)
 
@@ -1085,8 +1111,9 @@ async def reporte_ventas_cliente_pdf(
         c.setFont("Helvetica", 11)
         total_general = 0
 
-        for cliente, cierre, fecha_hora, total_numeros, total_monto in filas:
-            if y < 50:
+        for cliente, cierre, fecha_hora, detalle_json, total_numeros, total_monto in filas:
+            # Si estamos cerca del borde inferior, creamos una nueva página
+            if y < 60:
                 c.showPage()
                 y = height - 50
                 c.setFont("Helvetica", 11)
@@ -1094,13 +1121,50 @@ async def reporte_ventas_cliente_pdf(
             # Formatear la fecha
             fecha_str = fecha_hora.strftime("%d-%m-%Y %H:%M")
 
-            c.drawString(50, y, cliente[:20])        # Cliente (acortado a 20 para que quepa)
-            c.drawString(150, y, fecha_str)          # Fecha y Hora (NUEVA)
-            c.drawString(260, y, cierre[:20])        # Cierre
-            c.drawString(400, y, str(total_numeros)) # Números
-            c.drawString(480, y, f"{total_monto:.2f}") # Total
+            # Procesar el desglose
+            desglose_texto = ""
+            if detalle_json:
+                detalle = json.loads(detalle_json) if isinstance(detalle_json, str) else detalle_json
+                partes = []
+                for grupo in detalle:
+                    cant = len(grupo["numeros"])
+                    precio = grupo["precio"]
+                    precio_str = int(precio) if float(precio).is_integer() else precio
+                    partes.append(f"{cant} de {precio_str}")
+                desglose_texto = ", ".join(partes)
+            else:
+                desglose_texto = str(total_numeros)
+
+            # Dibujar los datos principales
+            c.drawString(50, y, cliente[:20])          
+            c.drawString(150, y, fecha_str)            
+            c.drawString(260, y, cierre[:20])          
+
+            # Lógica mejorada para dividir el desglose
+            # Si el texto supera los 25 caracteres, lo dividimos en dos líneas
+            if len(desglose_texto) > 25:
+                corte = desglose_texto.rfind(',', 0, 25)
+                if corte == -1:
+                    corte = 25 
+                
+                linea1 = desglose_texto[:corte]
+                linea2 = desglose_texto[corte:].lstrip(', ')
+                
+                c.drawString(370, y, linea1)           # Primera línea en la coordenada X=370
+                c.drawString(370, y - 12, linea2)      # Segunda línea más abajo
+            else:
+                c.drawString(370, y, desglose_texto)   # Si es corto, una sola línea
+
+            # Dibujar el monto total alineado a la derecha (X=550)
+            c.drawRightString(550, y, f"{total_monto:.2f}") 
+            
             total_general += total_monto
-            y -= 20
+            
+            # Bajar el puntero Y (si hubo dos líneas en el desglose, bajamos más para no montar la siguiente fila)
+            if len(desglose_texto) > 25:
+                y -= 30
+            else:
+                y -= 20
 
         # Total general y Beneficio
         y -= 10

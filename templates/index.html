@@ -928,6 +928,7 @@
         async function cargarReporte() {
             const clienteFiltro = document.getElementById('reporteClienteFiltro').value;
             const numeroFiltro = document.getElementById('reporteNumeroFiltro').value;
+            const cierreFiltro = document.getElementById('reporteCierreFiltro').value;
             const fechaInicio = document.getElementById('reporteFechaInicio').value;
             const fechaFin = document.getElementById('reporteFechaFin').value;
 
@@ -949,6 +950,11 @@
                 }
                 if (numeroFiltro && numeroFiltro.trim() !== "") {
                     url += `&numero_filtro=${encodeURIComponent(numeroFiltro.trim())}`;
+                }
+                
+                // NUEVA LÍNEA: Enviar el filtro de cierre al backend
+                if (cierreFiltro && cierreFiltro.trim() !== "") {
+                    url += `&cierre_filtro=${encodeURIComponent(cierreFiltro.trim())}`;
                 }
 
                 const res = await fetch(url, {
@@ -979,7 +985,7 @@
                             <td style="padding: 8px; width: 20%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.cliente}</td>
                             <td style="padding: 8px; width: 18%; white-space: nowrap; color: #aaa;">${item.fecha_hora}</td> <!-- NUEVA -->
                             <td style="padding: 8px; width: 25%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.cierre}</td>
-                            <td style="padding: 8px; width: 7%; text-align: center;">${item.total_numeros}</td>
+                            <td style="padding: 8px; width: 25%; text-align: center; color: #aaa;">${item.desglose}</td>
                             <td style="padding: 8px; width: 15%; text-align: right; white-space: nowrap;">L. ${item.total_monto.toFixed(2)}</td>
                             <td style="padding: 8px; width: 15%; text-align: center; white-space: nowrap;">
                                 <button onclick="cargarRecibo(${item.num_recibo})" style="background: #ffaa00; color: black; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; margin-right: 2px; font-size: 12px;" title="Ver Detalle">📂</button>
@@ -1018,6 +1024,7 @@
         async function descargarReportePDF() {
             const fechaInicio = document.getElementById('reporteFechaInicio').value;
             const fechaFin = document.getElementById('reporteFechaFin').value;
+            const cierreFiltro = document.getElementById('reporteCierreFiltro').value; // <-- LEE EL CIERRE
 
             if (!fechaInicio || !fechaFin) {
                 document.getElementById('reporteTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #ff5555;">❌ Seleccione ambas fechas</td></tr>';
@@ -1461,8 +1468,17 @@
             <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
                 <input type="text" id="reporteClienteFiltro" placeholder="Cliente (opcional)" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 100px;">
                 <input type="text" id="reporteNumeroFiltro" placeholder="Número (opcional)" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 100px;">
-                <input type="date" id="reporteFechaInicio" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 150px;">
-                <input type="date" id="reporteFechaFin" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 150px;">
+                
+                <!-- NUEVO SELECT DE CIERRE -->
+                <select id="reporteCierreFiltro" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 120px;">
+                    <option value="">Todos los cierres</option>
+                    <option value="Cierre 1 (11am)">Cierre 1 (11am)</option>
+                    <option value="Cierre 2 (3pm)">Cierre 2 (3pm)</option>
+                    <option value="Cierre 3 (9pm)">Cierre 3 (9pm)</option>
+                </select>
+                <!-- FIN DEL NUEVO SELECT -->
+
+                <input type="date" id="reporteFechaInicio" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 150px;">                <input type="date" id="reporteFechaFin" style="flex: 1; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 5px; min-width: 150px;">
                 <button onclick="cargarReporte()" style="width: auto; padding: 8px 15px; background: #00a86b; color: white; border: none; border-radius: 5px;">🔍 Cargar</button>
                 <button onclick="descargarReportePDF()" style="width: auto; padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 5px;">📄 Descargar PDF</button>
             </div>
@@ -1473,7 +1489,7 @@
                             <th style="padding: 8px; text-align: left;">Cliente</th>
                             <th style="padding: 8px; text-align: left;">Fecha / Hora</th>
                             <th style="padding: 8px; text-align: left;">Cierre</th>
-                            <th style="padding: 8px; text-align: center;">Números</th>
+                            <th style="padding: 8px; text-align: center;">Desglose Jugadas</th>
                             <th style="padding: 8px; text-align: right;">Total L.</th>
                             <th style="padding: 8px; text-align: center;">Acciones</th>
                         </tr>
