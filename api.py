@@ -71,11 +71,11 @@ def generar_recibo_pdf(
     # Fuentes y tamaños
     FUENTE_NORMAL = "Helvetica"
     FUENTE_NEGRITA = "Helvetica-Bold"
-    TAMANO_GRANDE = 22
+    TAMANO_GRANDE = 24
     TAMANO_NUMEROS = 34
-    TAMANO_PRECIO_SUBTOTAL = 22
-    TAMANO_PIE = 24
-    TAMANO_PEQUENO = 13
+    TAMANO_PRECIO_SUBTOTAL = 24
+    TAMANO_PIE = 26
+    TAMANO_PEQUENO = 15
 
     # === ENCABEZADO ===
     c.setStrokeColor(color_oro)
