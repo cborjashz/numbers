@@ -72,7 +72,7 @@ def generar_recibo_pdf(
     FUENTE_NORMAL = "Helvetica"
     FUENTE_NEGRITA = "Helvetica-Bold"
     TAMANO_GRANDE = 20
-    TAMANO_NUMEROS = 28
+    TAMANO_NUMEROS = 34
     TAMANO_PRECIO_SUBTOTAL = 20
     TAMANO_PIE = 22
     TAMANO_PEQUENO = 11
@@ -136,7 +136,7 @@ def generar_recibo_pdf(
     y = y_table - 35
     precios_ordenados = sorted(agrupado.keys(), reverse=True)
     total_numeros_jugados = 0
-    MAX_NUMEROS_POR_FILA = 8
+    MAX_NUMEROS_POR_FILA = 6
 
     for precio in precios_ordenados:
         numeros = agrupado[precio]
@@ -172,9 +172,9 @@ def generar_recibo_pdf(
                 c.setFillColor(color_oscuro)
                 c.drawString(margin_x, y, texto_bloque)
 
-            y -= 38
+            y -= 48
 
-        y -= 15
+        y -= 18
 
     # === TOTAL Y PIE DE PÁGINA ===
     if y < 200:
