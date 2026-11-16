@@ -72,7 +72,7 @@ def generar_recibo_pdf(
     FUENTE_NORMAL = "Helvetica"
     FUENTE_NEGRITA = "Helvetica-Bold"
     TAMANO_GRANDE = 24
-    TAMANO_NUMEROS = 34
+    TAMANO_NUMEROS = 36
     TAMANO_PRECIO_SUBTOTAL = 24
     TAMANO_PIE = 26
     TAMANO_PEQUENO = 15
@@ -154,7 +154,7 @@ def generar_recibo_pdf(
             texto_bloque = ", ".join(bloque)
 
             if idx == 0:
-                c.setFont(FUENTE_NORMAL, TAMANO_NUMEROS)
+                c.setFont(FUENTE_NEGRITA, TAMANO_NUMEROS)
                 c.setFillColor(color_oscuro)
                 c.drawString(margin_x, y, texto_bloque)
 
@@ -168,7 +168,7 @@ def generar_recibo_pdf(
                 texto_derecho = f"A {precio_str} = {subtotal_grupo:.2f}"
                 c.drawRightString(width - margin_x, y, texto_derecho)
             else:
-                c.setFont(FUENTE_NORMAL, TAMANO_NUMEROS)
+                c.setFont(FUENTE_NEGRITA, TAMANO_NUMEROS)
                 c.setFillColor(color_oscuro)
                 c.drawString(margin_x, y, texto_bloque)
 
