@@ -123,7 +123,7 @@
             <div style="display: flex; justify-content: center; align-items: center; gap: 10px; margin: 5px 0 15px 0; flex-wrap: wrap;">
                 <button onclick="limpiarSeleccion()" style="width: auto; padding: 8px 25px; background: #d32f2f; color: white; font-size: 14px; border-radius: 8px;">🗑️ Limpiar Selección</button>
                 <input type="number" id="precioGlobalInput" placeholder="Precio global" step="1" min="1" style="width: 150px; padding: 8px; background: #3b3b5c; color: white; border: none; border-radius: 8px; font-size: 14px;">
-                <button onclick="abrirWhatsAppModal()" style="width: auto; padding: 8px 25px; background: #25d366; color: white; font-size: 14px; border-radius: 8px; border: none; cursor: pointer;">📱 Importar WhatsApp</button>
+                <button onclick="abrirWhatsAppModal()" style="width: auto; padding: 8px 25px; background: #25d366; color: white; font-size: 14px; border-radius: 8px; border: none; cursor: pointer;">📱 Interprete IA</button>
             </div>
 
             <!-- Tablero de números -->
@@ -591,22 +591,23 @@
         }
 
         function toggleNumber(num, btn) {
-            // Si el número ya está seleccionado, abrimos el modal (comportamiento actual)
-            if (btn.classList.contains('selected')) {
-                abrirModalPrecio(num, btn);
-                return;
-            }
-
-            // Revisar si hay un precio global definido
+            // 1. SIEMPRE revisar primero si hay un precio global definido
             const precioGlobal = parseFloat(document.getElementById('precioGlobalInput').value);
 
             if (precioGlobal && precioGlobal > 0) {
-                // Si hay precio global, agregar directamente sin abrir el modal
+                // Si hay precio global, agregar directamente (sin importar si ya estaba seleccionado)
                 btn.classList.add('selected');
                 agregarAResumen(num, precioGlobal);
                 actualizarMontosTablero();
             } else {
-                // Si no hay precio global, abrir el modal (comportamiento actual)
+                // 2. Si NO hay precio global:
+                // Si el número ya está seleccionado, abrimos el modal para agregar otro precio
+                if (btn.classList.contains('selected')) {
+                    abrirModalPrecio(num, btn);
+                    return;
+                }
+                
+                // Si no está seleccionado, abrimos el modal normal
                 abrirModalPrecio(num, btn);
             }
         }
@@ -672,12 +673,16 @@
         function agregarAResumen(num, precio) {
             const tbody = document.getElementById('resumenTableBody');
             const row = document.createElement('tr');
-            row.id = `resumen-${num}`;
+            
+            // Generamos un ID único usando la marca de tiempo
+            const uniqueId = `fila-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            row.id = uniqueId;
+
             row.innerHTML = `
                 <td style="padding: 6px;">${num}</td>
                 <td style="padding: 6px;">L. ${precio.toFixed(2)}</td>
                 <td style="padding: 6px; text-align: center;">
-                    <button onclick="eliminarDeResumen('${num}')" style="background: #d32f2f; color: white; border: none; border-radius: 4px; padding: 2px 8px; cursor: pointer;">🗑️</button>
+                    <button onclick="eliminarDeResumen('${uniqueId}', '${num}')" style="background: #d32f2f; color: white; border: none; border-radius: 4px; padding: 2px 8px; cursor: pointer;">🗑️</button>
                 </td>
             `;
             tbody.appendChild(row);
@@ -687,22 +692,39 @@
             actualizarTotalResumen();
         }
 
-        function eliminarDeResumen(num) {
-            const row = document.getElementById(`resumen-${num}`);
+        function eliminarDeResumen(uniqueId, num) {
+            const row = document.getElementById(uniqueId);
             if (row) {
                 row.remove();
-                // Desmarcar del tablero
-                const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
-                if (btn) {
-                    btn.classList.remove('selected');
+                
+                // Verificar si el número sigue existiendo en otra fila (por si se vendió 2 veces)
+                const filasRestantes = document.getElementById('resumenTableBody').children;
+                let numeroSigueEnTabla = false;
+
+                for (let fila of filasRestantes) {
+                    const numEnFila = fila.querySelector('td').innerText.trim();
+                    if (numEnFila === num) {
+                        numeroSigueEnTabla = true;
+                        break;
+                    }
                 }
-                const idx = selectedNumbers.indexOf(num);
-                if (idx > -1) {
-                    selectedNumbers.splice(idx, 1);
+
+                // Solo desmarcar del tablero si ya NO hay ninguna fila con este número
+                if (!numeroSigueEnTabla) {
+                    const btn = document.querySelector(`.num-btn[data-num="${num}"]`);
+                    if (btn) {
+                        btn.classList.remove('selected');
+                    }
+                    const idx = selectedNumbers.indexOf(num);
+                    if (idx > -1) {
+                        selectedNumbers.splice(idx, 1);
+                    }
                 }
+
                 actualizarTotalResumen();
+                
                 // Ocultar el contenedor si ya no hay filas
-                if (document.getElementById('resumenTableBody').children.length === 0) {
+                if (filasRestantes.length === 0) {
                     document.getElementById('resumenContainer').style.display = 'none';
                 }
             }
@@ -1241,6 +1263,7 @@
         function abrirWhatsAppModal() {
             document.getElementById('whatsappModal').style.display = 'flex';
             document.getElementById('whatsappText').value = '';
+            document.getElementById('whatsappText').dataset.textoFijo = '';
             document.getElementById('whatsappMsg').innerHTML = '';
             document.getElementById('whatsappText').focus();
         }
@@ -1289,6 +1312,58 @@
                 document.getElementById('resultMsg').innerHTML = `<span class="success">✅ ${items.length} números importados desde WhatsApp.</span>`;
                 actualizarMontosTablero();
             }, 1500);
+        }
+
+        // Función para convertir palabras (letras) a números
+        function convertirPalabrasANumeros(texto) {
+            const diccionario = {
+                // Unidades
+                'cero': '0', 'uno': '1', 'una': '1', 'dos': '2', 'tres': '3', 'cuatro': '4', 
+                'cinco': '5', 'seis': '6', 'siete': '7', 'ocho': '8', 'nueve': '9',
+                // Decenas
+                'diez': '10', 'once': '11', 'doce': '12', 'trece': '13', 'catorce': '14', 
+                'quince': '15', 'dieciseis': '16', 'dieciséis': '16', 'diecisiete': '17', 
+                'dieciocho': '18', 'diecinueve': '19', 'veinte': '20', 
+                'veintiuno': '21', 'veintidos': '22', 'veintidós': '22', 'veintitres': '23', 'veintitrés': '23',
+                'veinticuatro': '24', 'veinticinco': '25', 'veintiseis': '26', 'veintiséis': '26',
+                'veintisiete': '27', 'veintiocho': '28', 'veintinueve': '29',
+                'treinta': '30', 'cuarenta': '40', 'cincuenta': '50', 'sesenta': '60', 
+                'setenta': '70', 'ochenta': '80', 'noventa': '90',
+                'cien': '100', 'ciento': '100', 'doscientos': '200', 'trescientos': '300', 
+                'cuatrocientos': '400', 'quinientos': '500', 'seiscientos': '600', 
+                'setecientos': '700', 'ochocientos': '800', 'novecientos': '900',
+                // Palabras de conexión
+                'a': 'a', 'con': 'con', 'de': 'de', 'pesos': '', 'lps': '', 'lempiras': ''
+            };
+
+            // 1. Limpiamos el texto: minúsculas y quitamos puntos/acentos raros
+            let limpio = texto.toLowerCase().replace(/[.,]/g, '');
+            
+            // 2. Reemplazamos "y" (ej. "cincuenta y dos") por un espacio
+            limpio = limpio.replace(/\by\b/g, ' ');
+
+            // 3. Reemplazamos cada palabra por su número (si existe en el diccionario)
+            let palabras = limpio.split(/\s+/);
+            let resultado = palabras.map(palabra => {
+                // Si la palabra está en el diccionario, la cambiamos por el número
+                return diccionario[palabra] !== undefined ? diccionario[palabra] : palabra;
+            });
+
+            // 4. Juntamos el texto y limpiamos espacios dobles
+            let textoNumerico = resultado.join(' ').replace(/\s+/g, ' ').trim();
+
+            // 5. MAGIA EXTRA: Unimos los números sueltos que estaban en decenas (ej. "50 2" pasa a "52")
+            // Esto se hace para que "cincuenta" "y" "dos" se junte en "52"
+            textoNumerico = textoNumerico.replace(/([1-9]0)\s+([1-9])/g, (match, decena, unidad) => {
+                return parseInt(decena) + parseInt(unidad);
+            });
+
+            // 6. Si es un solo dígito (del 0 al 9), le agregamos el cero a la izquierda
+            // para que "5 a 50" se convierta en "05 a 50"
+            textoNumerico = textoNumerico.replace(/\b([0-9])\b(?!\s*a\b)/g, '0$1'); 
+            // Nota: el (?!\s*a\b) es para que no convierta los precios que vienen después de "a" (ej. "5 a 10")
+
+            return textoNumerico;
         }
 
         function interpretarTextoWhatsApp(texto) {
@@ -1456,7 +1531,117 @@
 
             return items;
         }        
-        
+
+
+        // ==========================================
+        // LÓGICA DE RECONOCIMIENTO DE VOZ (DENTRO DE WHATSAPP)
+        // ==========================================
+        let recognition = null;
+        let grabando = false;
+
+        function inicializarReconocimiento() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert("❌ Tu navegador no soporta el reconocimiento de voz. Usa Chrome o Edge.");
+                return null;
+            }
+
+            const rec = new SpeechRecognition();
+            rec.lang = 'es-NI';
+            rec.continuous = true;
+            rec.interimResults = true;
+
+            rec.onstart = function() {
+                grabando = true;
+                document.getElementById('btnAudioModal').innerText = "🛑 Escuchando... (Presiona para detener)";
+                document.getElementById('btnAudioModal').style.background = "#d32f2f";
+                document.getElementById('whatsappMsg').innerHTML = '<span style="color: #ffaa00;">Escuchando... Habla claro.</span>';
+            };
+
+            rec.onresult = function(event) {
+                const textarea = document.getElementById('whatsappText');
+                let textoInterino = "";
+                let textoFinal = "";
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    if (event.results[i].isFinal) {
+                        textoFinal += event.results[i][0].transcript + " ";
+                    } else {
+                        textoInterino += event.results[i][0].transcript;
+                    }
+                }
+
+                // 1. Si hay texto FINAL (el navegador ya confirmó la frase)
+                if (textoFinal.trim() !== "") {
+                    let textoConvertido = convertirPalabrasANumeros(textoFinal.trim());
+                    
+                    // Guardamos el texto confirmado con un salto de línea
+                    textarea.value = textarea.dataset.textoFijo + textoConvertido + "\n";
+                    textarea.dataset.textoFijo = textarea.value; // Lo guardamos como base
+                    
+                } 
+                // 2. Si hay texto INTERINO (el navegador está adivinando lo que dices ahora)
+                else if (textoInterino.trim() !== "") {
+                    let textoConvertidoInterino = convertirPalabrasANumeros(textoInterino);
+                    
+                    // Mostramos el texto base + lo que se está escuchando en este instante
+                    textarea.value = textarea.dataset.textoFijo + textoConvertidoInterino;
+                }
+
+                // Hacemos scroll hacia abajo para ver lo último
+                textarea.scrollTop = textarea.scrollHeight;
+            };
+
+            rec.onerror = function(event) {
+                if (event.error === 'not-allowed') {
+                    alert("❌ Micrófono bloqueado. Asegúrate de dar permisos.");
+                }
+                detenerGrabacionAudioModal();
+            };
+
+            rec.onend = function() {
+                if (grabando) {
+                    rec.start(); // Si se detiene por silencio, se reinicia solo
+                }
+            };
+
+            return rec;
+        }
+
+        function toggleGrabacionAudioModal() {
+            if (grabando) {
+                detenerGrabacionAudioModal();
+            } else {
+                // Si el cuadro de texto está vacío, limpiamos la memoria antes de empezar
+                const textarea = document.getElementById('whatsappText');
+                if (textarea.value === '') {
+                    textarea.dataset.textoFijo = '';
+                }
+
+                if (!recognition) {
+                    recognition = inicializarReconocimiento();
+                }
+                if (recognition) {
+                    try {
+                        recognition.start();
+                    } catch(e) {
+                        console.log("El reconocimiento ya está activo");
+                    }
+                }
+            }
+        }
+
+        function detenerGrabacionAudioModal() {
+            if (recognition) {
+                grabando = false;
+                recognition.stop();
+            }
+            document.getElementById('btnAudioModal').innerText = "🎤 Dictar por Audio";
+            document.getElementById('btnAudioModal').style.background = "#e91e63";
+            document.getElementById('whatsappMsg').innerHTML = '<span style="color: #00a86b;">✅ Audio capturado. Puedes editarlo o presionar "Procesar".</span>';
+        }
+
+
     </script>
     <!-- MODAL DE REPORTE -->
     <div id="reporteModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
@@ -1528,19 +1713,27 @@
     <div id="whatsappModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
         <div style="background: #2d2d44; padding: 25px; border-radius: 15px; width: 90%; max-width: 600px; color: white;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
-                <h2 style="margin: 0;">📱 Importar desde WhatsApp</h2>
+                <h2 style="margin: 0;">📱 Interprete IA</h2>
                 <button onclick="cerrarWhatsAppModal()" style="background: #d32f2f; color: white; border: none; border-radius: 5px; padding: 5px 15px; cursor: pointer;">✕ Cerrar</button>
             </div>
             <div style="margin-bottom: 10px;">
-                <label style="font-size: 14px; display: block; margin-bottom: 5px;">Pega aquí el mensaje de WhatsApp:</label>
-                <textarea id="whatsappText" rows="8" style="width: 100%; padding: 10px; background: #3b3b5c; color: white; border: none; border-radius: 8px; font-size: 14px; resize: vertical; box-sizing: border-box;" placeholder="Ejemplo:&#10;50 a 10&#10;27 a 15&#10;71,72,73,74,75,76,77,78,79 a 25"></textarea>
+                <label style="font-size: 14px; display: block; margin-bottom: 5px;">Pega aquí el mensaje de WhatsApp o presiona el boton de dictar por audio:</label>
+                <textarea id="whatsappText" oninput="if(this.value === '') this.dataset.textoFijo = '';" rows="6" style="width: 100%; padding: 10px; background: #3b3b5c; color: white; border: none; border-radius: 8px; font-size: 14px; resize: vertical; box-sizing: border-box;" placeholder="Ejemplo:&#10;50 a 10&#10;27 a 15&#10;71,72,73,74,75,76,77,78,79 a 25"></textarea>
             </div>
+            
+            <!-- BOTÓN DE AUDIO DENTRO DEL MODAL -->
+            <div style="display: flex; justify-content: center; margin-bottom: 15px;">
+                <button id="btnAudioModal" onclick="toggleGrabacionAudioModal()" style="width: 100%; padding: 12px; background: #e91e63; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">🎤 Dictar por Audio</button>
+            </div>
+
             <div id="whatsappMsg" style="margin-bottom: 10px; text-align: center; font-weight: bold;"></div>
             <div style="display: flex; gap: 10px; justify-content: flex-end;">
                 <button onclick="cerrarWhatsAppModal()" style="background: #555; color: white; border: none; border-radius: 5px; padding: 10px 20px; cursor: pointer;">Cancelar</button>
                 <button onclick="procesarWhatsApp()" style="background: #00a86b; color: white; border: none; border-radius: 5px; padding: 10px 20px; cursor: pointer; font-weight: bold;">🧠 Procesar</button>
             </div>
         </div>
-    </div>    
+    </div>
+    
+
 </body>
 </html>
