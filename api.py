@@ -144,7 +144,8 @@ def generar_recibo_pdf(
         total_numeros_jugados += cant_numeros
         subtotal_grupo = precio * cant_numeros
 
-        if y < 100:
+        # 1. Si el espacio vertical es muy poco, saltamos de página ANTES de dibujar el grupo
+        if y < 150:
             c.showPage()
             y = height - 100
 
@@ -152,6 +153,11 @@ def generar_recibo_pdf(
 
         for idx, bloque in enumerate(bloques):
             texto_bloque = ", ".join(bloque)
+
+            # 2. Verificamos que haya espacio para esta línea de números antes de dibujarla
+            if y < 80:
+                c.showPage()
+                y = height - 100
 
             if idx == 0:
                 c.setFont(FUENTE_NEGRITA, TAMANO_NUMEROS)
