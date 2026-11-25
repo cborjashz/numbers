@@ -59,6 +59,7 @@ def generar_recibo_pdf(
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
 
+
     # Colores base
     color_oro = (0.85, 0.65, 0.13)          # Para las líneas decorativas
     color_verde_oscuro = (0.10, 0.35, 0.20)  # Nuevo color sólido
@@ -72,8 +73,8 @@ def generar_recibo_pdf(
     FUENTE_NORMAL = "Helvetica"
     FUENTE_NEGRITA = "Helvetica-Bold"
     TAMANO_GRANDE = 24
-    TAMANO_NUMEROS = 36
-    TAMANO_PRECIO_SUBTOTAL = 24
+    TAMANO_NUMEROS = 44
+    TAMANO_PRECIO_SUBTOTAL = 28
     TAMANO_PIE = 26
     TAMANO_PEQUENO = 15
 
@@ -136,7 +137,7 @@ def generar_recibo_pdf(
     y = y_table - 35
     precios_ordenados = sorted(agrupado.keys(), reverse=True)
     total_numeros_jugados = 0
-    MAX_NUMEROS_POR_FILA = 6
+    MAX_NUMEROS_POR_FILA = 4
 
     for precio in precios_ordenados:
         numeros = agrupado[precio]
@@ -178,7 +179,7 @@ def generar_recibo_pdf(
                 c.setFillColor(color_oscuro)
                 c.drawString(margin_x, y, texto_bloque)
 
-            y -= 48
+            y -= 60
 
         y -= 18
 

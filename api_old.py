@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from datetime import datetime
 import psycopg2
 from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import cm, mm
 from reportlab.pdfgen import canvas
 import io
 import os
@@ -72,8 +73,8 @@ def generar_recibo_pdf(
     FUENTE_NORMAL = "Helvetica"
     FUENTE_NEGRITA = "Helvetica-Bold"
     TAMANO_GRANDE = 24
-    TAMANO_NUMEROS = 36
-    TAMANO_PRECIO_SUBTOTAL = 24
+    TAMANO_NUMEROS = 44
+    TAMANO_PRECIO_SUBTOTAL = 28
     TAMANO_PIE = 26
     TAMANO_PEQUENO = 15
 
@@ -136,7 +137,7 @@ def generar_recibo_pdf(
     y = y_table - 35
     precios_ordenados = sorted(agrupado.keys(), reverse=True)
     total_numeros_jugados = 0
-    MAX_NUMEROS_POR_FILA = 6
+    MAX_NUMEROS_POR_FILA = 4
 
     for precio in precios_ordenados:
         numeros = agrupado[precio]
@@ -144,7 +145,8 @@ def generar_recibo_pdf(
         total_numeros_jugados += cant_numeros
         subtotal_grupo = precio * cant_numeros
 
-        if y < 100:
+        # 1. Si el espacio vertical es muy poco, saltamos de página ANTES de dibujar el grupo
+        if y < 150:
             c.showPage()
             y = height - 100
 
@@ -152,6 +154,11 @@ def generar_recibo_pdf(
 
         for idx, bloque in enumerate(bloques):
             texto_bloque = ", ".join(bloque)
+
+            # 2. Verificamos que haya espacio para esta línea de números antes de dibujarla
+            if y < 80:
+                c.showPage()
+                y = height - 100
 
             if idx == 0:
                 c.setFont(FUENTE_NEGRITA, TAMANO_NUMEROS)
@@ -172,7 +179,7 @@ def generar_recibo_pdf(
                 c.setFillColor(color_oscuro)
                 c.drawString(margin_x, y, texto_bloque)
 
-            y -= 48
+            y -= 60
 
         y -= 18
 
